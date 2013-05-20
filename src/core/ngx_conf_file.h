@@ -95,9 +95,9 @@ struct ngx_open_file_s {
     void                 *data;                      //
 };
 
-
-#define NGX_MODULE_V1          0, 0, 0, 0, 0, 0, 1
-#define NGX_MODULE_V1_PADDING  0, 0, 0, 0, 0, 0, 0, 0
+// 具体可参见nginx-modules-and-init文件
+#define NGX_MODULE_V1          0, 0, 0, 0, 0, 0, 1            //使用这个值初始化模块前面7个字段的值
+#define NGX_MODULE_V1_PADDING  0, 0, 0, 0, 0, 0, 0, 0         //使用这个值初始化模块最后面的8个字段的值
 
 struct ngx_module_s {
     ngx_uint_t            ctx_index;             //分类模块计数器 

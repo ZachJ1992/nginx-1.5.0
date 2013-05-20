@@ -1,0 +1,88 @@
+1.   ngx_modules数组结构如下:
++-----+  ------------------------------------------------+
+|  0  |                  ngx_core_module                 |
++-----+  ------------------------------------------------+
+|  1  |                 ngx_errlog_module                |
++-----+  ------------------------------------------------+
+|  2  |                 ngx_conf_module                  |
++-----+  ------------------------------------------------+
+|  3  |                 ngx_events_module                |
++-----+  ------------------------------------------------+
+|  4  |               ngx_event_core_module              |
++-----+  ------------------------------------------------+
+|  5  |                 ngx_epoll_module                 |
++-----+  ------------------------------------------------+
+|  6  |                 ngx_regex_module                 |
++-----+  ------------------------------------------------+
+|  7  |                 ngx_http_module                  |
++-----+  ------------------------------------------------+
+|  8  |                 ngx_http_core_module             |
++-----+  ------------------------------------------------+
+|  9  |                 ngx_http_log_module              |
++-----+  ------------------------------------------------+
+| ... |                                                  |
++-----+  ------------------------------------------------+
+|  41 |       ngx_http_copy_filter_module                |
++-----+  ------------------------------------------------+
+|  42 |    ngx_http_range_body_filter_module             |
++-----+  ------------------------------------------------+
+|  43 |      ngx_http_not_modified_filter_module         |
++-----+  ------------------------------------------------+
+|  44 |                     NULL                         |
++-----+  ------------------------------------------------+
+ 在对全局数组ngx_modules进行初始化时，即对每一个模块进行了静态初始化。
+ 其中对模块的type字段的初始化是通过以下4个宏进行的。
+ 1. ./src/core/ngx_conf_file.h中定义的CORE和CONF.
+ #define NGX_CORE_MODULE      0x45524F43   /* "CORE" */
+ #define NGX_CONF_MODULE      0x464E4F43   /* "CONF" */
+ 2. ./src/event/ngx_event.h中定义的EVENT
+ #define NGX_EVENT_MODULE      0x544E5645  /* "EVNT" */
+ 3. ./src/http/ngx_http_config.h中定义的HTTP
+ #define NGX_HTTP_MODULE       0x50545448  /* "HTTP" */
+ 即模块种类宏，定义为一个十六进制的数，这个十六进制的数就是其类型对应的ASCII码。
+ 因此，nginx共有4种类型的模块，分别为"CORE","CONF","EVNT","HTTP"。
+ 实际上，如果在configure阶段，使用了"--with-mail"参数，mail模块将被编译进来，其对应的宏如下。
+ #define NGX_MAIL_MODULE       0x4C49414D  /* "MAIL" */
+ 因此，严格来讲，nginx有5中类型的模块，"CORE","CONF","EVNT","HTTP","MAIL"。
+
+2.   nginx如何初始化这些模块?
+     1) 静态初始化
+        即编译期间完成的数据成员初始化。记{mname}为某个模块的名字，其静态初始化过程如下。
+        (1) 用宏NGX_MODULE_V1初始化前7个字段
+        (2) 用全局对象ngx_{mname}_module_ctx的地址初始化ctx指针
+        (3) 用全局数组ngx_{mname}_commands[]初始化commands指针
+        (4) 用宏NGX_CORE_MODULE等初始化type字段
+        (5) 初始化init_master等callback
+        (6) 用宏NGX_MODULE_V1_PADDING初始化最后8个字段
+        
+        由此可见，在定义该模块(全局结构对象)时，将其ctx_index和index均初始化为0。
+        因此，模块的静态初始化(数据成员初始化)实际上只是对模块上下文、模块命令集和模块类型进行初始化。
+     2) 动态初始化
+        即nginx运行(启动)初期，对模块本身的初始化。
+        (1) index字段的初始化
+        对各个模块的index字段的初始化是在main函数中进行的，如下:
+            ngx_max_module = 0;
+            for (i = 0; ngx_modules[i]; i++) {
+                ngx_modules[i]->index = ngx_max_module++;
+            }
+        可见，该for-loop执行后，每个模块的index值便是其在ngx_modules[]数组中的下标值，
+        且全局变量ngx_max_module为模块个数，对于本例来讲，ngx_max_module=44。
+
+        (2) ctx_index字段的初始化
+        这个字段的初始化分别在ngx_event.c中的ngx_events_block函数，
+                              ngx_mail.c中的ngx_mail_block函数，
+                              ngx_http.c中的ngx_http_block函数等中实现。
+            for (i = 0; ngx_modules[i]; i++) {
+                if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
+                    continue;
+                }
+
+                m = ngx_modules[i]->ctx;
+
+                if (m->create_conf) {
+                    (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
+                    if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {
+                        return NGX_CONF_ERROR;
+                    }
+                }
+            }
