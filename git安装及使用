@@ -1,0 +1,18 @@
+1. 下载git源码包 : http://code.google.com/p/git-core/downloads/detail?name=git-1.8.0.tar.gz&can=2&q=
+2. 解压安装:
+   tar zxvf git.xxxx.tar.gz
+   cd git.xxxx
+   make && make install
+   
+   检查是否安装成功
+   git --version
+
+3. 使用git管理github源代码
+   先要注册github帐号，注册过程略去..
+
+4. 生成密钥对，这样项目可以push到 GitHub上
+   #ssh-keygen -t rsa -C "xxx@gmail.com"
+   将在.ssh下面生成两个文件:
+   id_rsa  id_rsa.pub
+5. 将.ssh/id_rsa.pub拷贝到GitHub网站
+   
