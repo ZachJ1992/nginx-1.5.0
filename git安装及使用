@@ -33,7 +33,88 @@
    # git commit -m 'first commit'
 
 9. 定义远程服务器别名origin
+   #  git init
    #  git remote add origin git@github.com:xxx/new-project.git
 
 10. 本地和远程合并，本地默认分支为master
    # git push origin master
+
+其他详细命令介绍：
+
+1.   git init 或者 git init-db
+     创建一个空的Git库。在当前目录中产生一个.git的子目录。
+     以后，所有的文件变化信息都会保存到这个目录下，而不像CVS那样，
+     会在每个目录和子目录下都创建一个CVS目录.
+
+     在.git目录下有一个config文件，可以修改其中的配置信息。下面是.git目录下面的文件及目录结构
+
+     branches
+     [f] config                    //配置文件
+     [f] description
+     [f] HEAD
+     hooks
+     info
+     objects
+     refs
+
+2.   git add
+     将当前工作目录中更改或者新增的文件加入到Git的索引中，加入到Git的索引中就表示记入了版本历史中，
+     这也是提交之前所需要执行的一步。
+     可以递归添加，即如果后面跟的是一个目录作为参数，则会递归添加整个目录中的所有子目录和文件。
+     例如： 
+       git add dir1 (添加dir1这个目录，目录下的所有文件都被加入)
+       git add f1 f2 (添加f1，f2文件)
+       git add . (添加当前目录下的所有文件和子目录)
+
+3.   git rm
+     从当前的工作目录中和索引中删除文件。
+     可以递归删除，即如果后面跟的是一个目录做为参数，则会递归删除整个目录中的所有子目录和文件。
+     例如：
+       git rm –r * (进入某个目录中，执行此语句，会删除该目录下的所有文件和子目录)
+       git rm f1   (删除文件f1，包含本地目录和index中的此文件记录) 
+       git rm --ached f1 (删除文件f1，不会删除本地目录文件，只删除index中的文件记录；
+            将已经git add的文件remove到cache中,这样commit的时候不会提交这个文件, 
+            适用于一下子添加了很多文件, 却又想排除其中个别几个文件的情况.)
+
+3.   git commit
+     提交当前工作目录的修改内容。
+     直接调用git commit命令，会提示填写注释。
+     通过如下方式在命令行就填写提交注释：git commit -m "Initial commit of gittutor reposistory"。
+     注意，和CVS不同，git的提交注释必须不能为空，否则就会提交失败。
+       git commit还有一个 -a的参数，可以将那些没有通过git add标识的变化一并强行提交，但是不建议使用这种方式。
+     每一次提交，git就会为全局代码建立一个唯一的commit标识代码，用户可以通过git reset命令恢复到任意一次提交时的代码。
+       git commit –-amend –m “message” (在一个commit id上不断修改提交的内容)
+
+4.   git status 
+     查看版本库的状态。可以得知哪些文件发生了变化，哪些文件还没有添加到git库中等等。
+     建议每次commit前都要通过该命令确认库状态。
+     最常见的误操作是，修改了一个文件，没有调用git add通知git库该文件已经发生了变化就直接调用commit操作，
+     从而导致该文件并没有真正的提交。
+     这时如果开发者以为已经提交了该文件，就继续修改甚至删除这个文件，那么修改的内容就没有通过版本管理起来。
+     如果每次在提交前，使用git status查看一下，就可以发现这种错误。
+     因此，如果调用了git status命令，一定要格外注意那些提示为 “Changed but not updated:”的文件。
+     这些文件都是与上次commit相比发生了变化，但是却没有通过git add标识的文件。
+
+5.   git log
+       查看历史日志，包含每次的版本变化。每次版本变化对应一个commit id。 
+       git log -1 
+       -1的意思是只显示一个commit，如果想显示5个，就-5。不指定的话，git log会从该commit一直往后显示。 
+       git log --stat –summary （显示每次版本的详细变化） 
+       在项目日志信息中，每条日志的首行（就是那一串字符）为版本更新提交所进行的命名，我们可以将该命名理解为项目版本号。
+       项目版本号应该是唯一的，默认由 Git 自动生成，用以标示项目的某一次更新。
+       如果我们将项目版本号用作git-show 命令的参数，即可查看该次项目版本的更新细节.
+
+6.   git merge
+     把服务器上下载下来的代码和本地代码合并。或者进行分支合并。
+     例如：当前在master分支上，若想将分支dev上的合并到master上，则git merge dev
+     注意：git merge nov/eclair_eocket （是将服务器git库的eclair_eocket分支合并到本地分支上）
+       git rebase nov/eclair_eocket （是将服务器git库的eclair_eocket分支映射到本地的一个临时分支上，然后将本地分支上的变化合并到这个临时分支，然后再用这个临时分支初始化本地分支）
+
+7.   git diff
+     把本地的代码和index中的代码进行比较，或者是把index中的代码和本地仓库中的代码进行比较。
+     1) git diff 
+     比较工作目录和Index中的代码。
+     2）git diff -- cached
+     比较index和本地仓库中的代码。
+
+参考文章： http://blog.csdn.net/gemmem/article/details/7290125
