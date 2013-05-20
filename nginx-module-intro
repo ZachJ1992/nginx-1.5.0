@@ -370,34 +370,30 @@ nginx带有两种负载均衡模块：
         因为他们不需要重求助于字符串操作。
 
         (4) 发送body
-        Sending the body
+        现在模块已经产生了一个响应，并放在了内存中，需要将响应赋予给特定的缓冲区， 然后赋予缓冲区到链式链接中， 然后调用
+        链条上的send body函数。
 
-Now that the module has generated a response and put it in memory, it needs to assign the response to a special buffer, and then assign the buffer to a chain link, and then call the "send body" function on the chain link.
+        这里的chain links到底是什么呢? nginx允许处理器模块一次性产生(过滤模块处理)响应到一个缓冲区；
+        每个chain link保持一个到下一个链接的指针， 或者chain links的最后一个是NULL。我们就将其简单化，假设只有一个缓冲区。
+        首先， 模块会声明这个缓冲区和chain link:
+            ngx_buf_t    *b;
+            ngx_chain_t   out;
+        下一步， 为缓冲区和指向响应数据的指针分配内存:
+            b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+            if (b == NULL) {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, 
+                    "Failed to allocate response buffer.");
+                return NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
 
-What are the chain links for? Nginx lets handler modules generate (and filter modules process) responses one buffer at a time; each chain link keeps a pointer to the next link in the chain, or NULL if it's the last one. We'll keep it simple and assume there is just one buffer.
+            b->pos = some_bytes; /* first position in memory of the data */
+            b->last = some_bytes + some_bytes_length; /* last position */
 
-First, a module will declare the buffer and the chain link:
+            b->memory = 1; /* content is in read-only memory */
+            /* (i.e., filters should copy it rather than rewrite in place) */
 
-    ngx_buf_t    *b;
-    ngx_chain_t   out;
-
-The next step is to allocate the buffer and point our response data to it:
-
-    b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
-    if (b == NULL) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, 
-            "Failed to allocate response buffer.");
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    b->pos = some_bytes; /* first position in memory of the data */
-    b->last = some_bytes + some_bytes_length; /* last position */
-
-    b->memory = 1; /* content is in read-only memory */
-    /* (i.e., filters should copy it rather than rewrite in place) */
-
-    b->last_buf = 1; /* there will be no more buffers in the request */
-
+            b->last_buf = 1; /* there will be no more buffers in the request */
+            
 Now the module attaches it to the chain link:
 
     out.buf = b;
