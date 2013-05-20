@@ -120,13 +120,13 @@ struct ngx_module_s {
     ngx_int_t           (*init_module)(ngx_cycle_t *cycle);      //初始化模块
 
     ngx_int_t           (*init_process)(ngx_cycle_t *cycle);     //初始化工作进程
-    ngx_int_t           (*init_thread)(ngx_cycle_t *cycle);      //
-    void                (*exit_thread)(ngx_cycle_t *cycle);
-    void                (*exit_process)(ngx_cycle_t *cycle);
+    ngx_int_t           (*init_thread)(ngx_cycle_t *cycle);      //初始化线程
+    void                (*exit_thread)(ngx_cycle_t *cycle);      //退出线程
+    void                (*exit_process)(ngx_cycle_t *cycle);     //退出工作进程
 
-    void                (*exit_master)(ngx_cycle_t *cycle);
+    void                (*exit_master)(ngx_cycle_t *cycle);      //退出master
 
-    uintptr_t             spare_hook0;
+    uintptr_t             spare_hook0;                           //替补钩子0
     uintptr_t             spare_hook1;
     uintptr_t             spare_hook2;
     uintptr_t             spare_hook3;
