@@ -160,17 +160,19 @@ static ngx_command_t  ngx_core_commands[] = {
       ngx_null_command
 };
 
-
+// ngx_core_module_t是核心模块结构体，包含一个模块名称以及两个指针函数create_conf和init_conf
+// 具体定义见./src/core/ngx_conf_file.h文件
+// 下面是定义全局的核心模块上下文ngx_core_module_ctx
 static ngx_core_module_t  ngx_core_module_ctx = {
     ngx_string("core"),
     ngx_core_module_create_conf,
     ngx_core_module_init_conf
 };
 
-
+// 下面定义核心模块全局变量
 ngx_module_t  ngx_core_module = {
-    NGX_MODULE_V1,
-    &ngx_core_module_ctx,                  /* module context */
+    NGX_MODULE_V1,                         // 前面七个字段使用NGX_MODULE_V1一次性填充起来
+    &ngx_core_module_ctx,                  // 模块的上下文， 即上面定义的ngx_core_module_ctx变量
     ngx_core_commands,                     /* module directives */
     NGX_CORE_MODULE,                       /* module type */
     NULL,                                  /* init master */
@@ -211,7 +213,7 @@ main(int argc, char *const *argv)
     if (ngx_strerror_init() != NGX_OK) {
         return 1;
     }
-
+    //获取参数和配置参数，比如命令是nginx -v 那么ngx_show_version就设置为1
     if (ngx_get_options(argc, argv) != NGX_OK) {
         return 1;
     }
@@ -268,15 +270,15 @@ main(int argc, char *const *argv)
     }
 
     /* TODO */ ngx_max_sockets = -1;
-
+    //初始化nginx环境的当前时间
     ngx_time_init();
 
 #if (NGX_PCRE)
     ngx_regex_init();
 #endif
-
+    //master pid， 获取当前进程ID
     ngx_pid = ngx_getpid();
-
+    // 初始化日志，如打开日志文件
     log = ngx_log_init(ngx_prefix);
     if (log == NULL) {
         return 1;
@@ -284,7 +286,7 @@ main(int argc, char *const *argv)
 
     /* STUB */
 #if (NGX_OPENSSL)
-    ngx_ssl_init(log);
+    ngx_ssl_init(log); //是否开启了ssl，如果开启在这里进行初始化
 #endif
 
     /*
@@ -295,41 +297,49 @@ main(int argc, char *const *argv)
     ngx_memzero(&init_cycle, sizeof(ngx_cycle_t));
     init_cycle.log = log;
     ngx_cycle = &init_cycle;
-
+    // 为cycle创建一个1024B的内存池
     init_cycle.pool = ngx_create_pool(1024, log);
     if (init_cycle.pool == NULL) {
         return 1;
     }
-
+    // 将命令行参数保存到ngx_os_argv、ngx_argc以及ngx_argv这几个全局的变量中。
+    // 这算是一个备份存储，方便以后master进程做热代码替换之用。
     if (ngx_save_argv(&init_cycle, argc, argv) != NGX_OK) {
         return 1;
     }
-
+    // 初始化init_cycle中的一些如: conf_file，prefix，conf_prefix等字段
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
 
-    if (ngx_os_init(log) != NGX_OK) {
+    // 完成操作系统的一些信息获取，如内存页面大小、系统限制资源,ngx_pagesize,ngx_cacheline_size,最大连接数ngx_max_sockets等
+    // 所有的这些资源都将会被保存在对应的全局变量中，因此后续访问将会很便利。
+    if (ngx_os_init(log) != NGX_OK) {// 这个ngx_os_init在不同操作系统调用不同的函数
         return 1;
     }
 
     /*
      * ngx_crc32_table_init() requires ngx_cacheline_size set in ngx_os_init()
      */
-
+    // 初始化一个做循环冗余校验的表，由此可以看出后续的循环冗余校验将采用高效的查表法。
     if (ngx_crc32_table_init() != NGX_OK) {
         return 1;
     }
 
+    // 通过环境变量NGINX完成socket的继承，继承来的socket将会放到init_cycle的listening数组中。
+    // 在NGINX环境变量中，每个socket中间用冒号或分号隔开。完成继承同时设置全局变量ngx_inherited为1。
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
-
+    // 计算模块个数，并且设置各个模块顺序（索引）
+    // 这里面的ngx_modules会有非常多的模块，编译后在objs下面会生成一个ngx_modules.c文件，里边列出了所有使用的模块
+    // 默认有44个模块
     ngx_max_module = 0;
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = ngx_max_module++;
     }
-
+    // 对ngx_cycle结构进行初始化,这里是nginx启动核心之处, 会将很多东西放在init_cycle中
+    // 详细见ngx_cycle.c中的 ngx_init_cycle方法
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {
@@ -348,7 +358,7 @@ main(int argc, char *const *argv)
 
         return 0;
     }
-
+    // 检查是否有设置信号处理，如有，进入ngx_signal_process处理
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -356,7 +366,7 @@ main(int argc, char *const *argv)
     ngx_os_status(cycle->log);
 
     ngx_cycle = cycle;
-
+    // 获取核心模块的配置信息
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
     if (ccf->master && ngx_process == NGX_PROCESS_SINGLE) {
@@ -364,11 +374,13 @@ main(int argc, char *const *argv)
     }
 
 #if !(NGX_WIN32)
-
+    // 注册一堆信号处理程序，需要注册的信号及相应的信号处理函数被放在一个类型为ngx_signal_t的数组signals中。
+    // 数组定义在src/os/unix/ngx_process.c中。ngx_signal_t结构类型定义了信号值，信号名字，信号对应动作名以及信号处理函数。
     if (ngx_init_signals(cycle->log) != NGX_OK) {
         return 1;
     }
-
+    // ngx_daemon肯定就是用来实现守护进程的函数了, 有需要写server程序的，可以直接copy这段代码实现守护进程。
+    // 代码实现位于 ./src/os/unix/ngx_daemon.c
     if (!ngx_inherited && ccf->daemon) {
         if (ngx_daemon(cycle->log) != NGX_OK) {
             return 1;
@@ -382,7 +394,9 @@ main(int argc, char *const *argv)
     }
 
 #endif
-
+    // 玩过Nginx的人都知道，Nginx启动后有一个记录进程id的文件，这个文件里面就一个pid。
+    // 原来这个pid就是在这个地方记录下来的。查看ngx_create_pidfile函数可以看到这样的一行代码
+    // 其中第一个参数为pid文件名称， 从核心配置文件中读取到的
     if (ngx_create_pidfile(&ccf->pid, cycle->log) != NGX_OK) {
         return 1;
     }
@@ -406,10 +420,10 @@ main(int argc, char *const *argv)
     ngx_use_stderr = 0;
 
     if (ngx_process == NGX_PROCESS_SINGLE) {
-        ngx_single_process_cycle(cycle);
+        ngx_single_process_cycle(cycle); //单进程
 
     } else {
-        ngx_master_process_cycle(cycle);
+        ngx_master_process_cycle(cycle); //多进程，master进程进入这个，这个函数在不同操作系统有不同实现。
     }
 
     return 0;

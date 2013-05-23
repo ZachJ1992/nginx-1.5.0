@@ -1,0 +1,223 @@
+                            Emiller's Guide To Nginx Module Development 
+                            Emiller的nginx模块开发指导
+                            http://www.evanmiller.org/nginx-modules-guide.html
+0. 预备知识
+    你应该熟悉C语言。 不仅仅是"C语法"；你起码要知道结构体，并且起码不会被指针和函数引用所惊吓，也要知道预处理指令。如果需要复习，
+    可以参看K&R(C编程语言这本书，两个作者名字的首字母组合起来的)。
+
+    如果对HTTP有个基本的了解也是必要的，毕竟你是在和web服务器打交道。
+
+    你也应该对Nginx的配置文件熟悉点。当然如果不熟悉也没有关系，这里简单的说明下，有个初步的映像：nginx配置有4中上下文，(叫做
+    main -- 全局配置， server -- 主机设置， upstream -- 上游服务器设置， location -- 基于URL匹配后的位置设置)， 它们都有数个带有
+    一到多个参数的指令。 在main上下文中的指令可以应用到其他所有设置； server上下文的指令应用到特定的主机/端口； upstream上下文的
+    指令用于设置一系列的后端服务器； location上下文的指令只应用到匹配的web位置(比如， "/", "/images"等等)。
+    location上下文从包围的server中继承， server从main中继承. upstream上下文指令既不继承也不会被继承属性； 它有它自己特殊的指令，
+    这些指令不会在其他地方应用的。 在下面的部分会涉及到它们， 切记...
+
+    下面让我们开始吧。
+
+1. Nginx的模块委派概述
+    Nginx模块有三种角色：
+    * handlers 处理请求并构造输出
+    * filters 处理由handler产生的输出
+    * 负载均衡(load-balancers) 当有多台后端服务可选择的时候， 负载均衡会选择一台，将http请求发送过去
+
+    很多你认为是web服务器的事情， 实际上都是模块来完成的： 任何时候Nginx提供文件或者代理请求到另外一个服务器， 都是通过handler来
+    实现的； 当Nginx用gzip压缩输出或者在服务器端加入点什么东西， 都是使用的filter模块。 Nginx的core模块主要管理网络层和应用层协议
+    以及启动针对处理特定请求的一系列后续模块。这种分散式架构使得你自己实现强大的内部单元成为可能。
+
+    注意：和Apache的模块不一样， Nginx模块不是动态链接的。(换句话说，Nginx的模块都是直接编译到Nginx的二进制文件里边的)。
+
+    模块又是如何被调用的呢? 典型的说， 在服务器启动的时候，每个handler都有机会将自己绑定到在配置中定义的特定位置；如果特定位置
+    绑定了多于一个handler， 那么只有一个能够"获胜"(但是掌握正确的配置规则当然不会让这样的冲突事情发生了)。
+
+    一个handler有三种方式的返回： 正常， 错误 或者放弃处理请求，转而让默认的处理器处理(典型地如处理静态文件的时候)。
+
+    如果handler的作用是将请求方向代理到后端服务器， 那么这就是刚才说到的另外一种类型模块:负载均衡。 负载均衡接收请求，决定将请求
+    派发到哪个后端服务器。 Nginx目前支持两种类型的负载均衡模块: round-robin和IP hash。 round-robin， 就像扑克牌游戏发牌的方式
+    处理请求， IP hash方法，能确保特定客户端在多次请求的时候能命中同一台后端服务器。
+
+    如果handler(就是http响应，即filter的输入)返回无误， 就会调用filter. 每个location配置都可以添加多个filter， 所以说(例如)响应
+    可以被压缩然后再分块。 多个filter的执行顺序是在编译时确定的。 filter采用了经典的接力链表设计模式(CHAIN OF RESPONSIBILITY):
+    一个filter被调用并处理， 接下来调用另外一个filter， 直到最后一个filter被调用， nginx才真正完成响应。
+
+    filter最酷的部分是filter链， 每个filter不用等待前面的filter完全完工；它可以处理之前filter正在输出的内容，有点类似Unix的管道。
+    filter的操作都是基于缓冲区的， 通常都是页的大小(4K)，当然你也可以在nginx.conf配置文件中改变它的大小。 这就意味着， 例如， 
+    模块可以在从后端服务器收到全部的响应之前，就开始压缩这个响应并流化(stream to)给客户端了。这非常NB!
+
+    总结一下上面的内容，一个典型的周期应当是这样的：
+    客户端发送HTTP request  → Nginx基于location的配置选择一个合适的handler
+                            → (如果有) load-balancer选择一个后端服务器
+                            → Handler处理请求并顺序将每一个响应buffer发送给第一个filter
+                            → 第一个filter讲输出交给第二个filter
+                            → 第二个给第三个
+                            → 第三个给第四个
+                            → 以此类推
+                            → 最终响应发送给客户端
+
+    我之所以说“典型地”是因为Ngingx的模块具有很强的定制性。模块开发者需要花很多精力精确定义模块在何时如何产生作用(我认为是件不容易
+    的事)。模块调用实际上是通过一系列的回调函数做到的，很多很多。名义上来说，你的函数可以在以下时候被执行：
+    
+    * server读取配置文件之前
+    * 读取location和server的每一条配置指令
+    * 当Nginx初始化main配置段时
+    * 当Nginx初始化server配置段时（例如：host/port）
+    * 当Nginx合并server配置和main配置时
+    * 当Nginx初始化location配置时
+    * 当Nginx合并location配置和它的父server配置时
+    * 当Nginx的主进程启动时
+    * 当一个新的worker进程启动时
+    * 当一个worker进程退出时
+    * 当主进程退出时
+    * handle 一个请求
+    * Filter响应头
+    * Filter响应体
+    * 选择一个后端服务器
+    * 初始化一个将发往后端服务器的请求
+    * 重新-初始化一个将发往后端服务器的请求
+    * 处理来自后端服务器的响应
+    * 完成与后端服务器的交互
+
+    难以置信！有这么多的功能任你处置，而你只需仅仅通过多组有用的钩子(由函数指针组成的结构体)和相应的实现函数。
+    让我们开始接触一些模块吧。
+
+2. Nginx模块的组成
+
+    我说过，Nginx模块的构建是很灵活的。这一节讲描述的东西会经常出现。它可以帮助你理解模块，也可以作为开发模块的手册。
+
+2.1. 模块配置Struct(s)
+    模块的配置struct有三种，分别是main, server和location. 但绝大多数模块仅需要一个location配置。名称约定如下: 
+        ngx_http_<module name>_(main|srv|loc)_conf_t.
+
+    这里有一个dav模块的例子:
+        typedef struct {
+            ngx_uint_t  methods;
+            ngx_flag_t  create_full_put_path;
+            ngx_uint_t  access;
+        } ngx_http_dav_loc_conf_t;
+
+        typedef intptr_t        ngx_int_t;              //整型指针
+        typedef uintptr_t       ngx_uint_t;             //无符号整型指针
+        typedef intptr_t        ngx_flag_t;             //整型指针
+
+    注意到上面展示了Nginx的一些特殊类型：(ngx_uint_t 和 ngx_flag_t); 这些只是基本类型的别名而已。(如果想知道具体是什么的别名，可以参考 core/ngx_config.h ). 这些类型用在配置结构体中的情形很多。
+
+2.2 模块指令
+    模块指令出现在静态的ngx_command_ts数组中。 这里是它们声明形式的例子， 从我写的一个小模块中提取出来的：
+        static ngx_command_t  ngx_http_circle_gif_commands[] = {
+            { ngx_string("circle_gif"),                    //名称                              name
+              NGX_HTTP_LOC_CONF|NGX_CONF_NOARGS,           //location类型的命令， 不带参数     args
+              ngx_http_circle_gif,                         //set函数指针                       set
+              NGX_HTTP_LOC_CONF_OFFSET,                    //配置信息                          conf
+              0,                                           //偏移量                            offset
+              NULL },                                      //通常都是NULL                      post
+
+            { ngx_string("circle_gif_min_radius"),
+              NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,  //可以是三种类型的命令， 带有1个参数
+              ngx_conf_set_num_slot,
+              NGX_HTTP_LOC_CONF_OFFSET,
+              offsetof(ngx_http_circle_gif_loc_conf_t, min_radius),
+              NULL },
+              ...
+              ngx_null_command
+        };
+    其中在./src/http/ngx_http_config.h
+        #define NGX_HTTP_MAIN_CONF        0x02000000           //指令在main配置中出现
+        #define NGX_HTTP_SRV_CONF         0x04000000           //指令在server配置中出现
+        #define NGX_HTTP_LOC_CONF         0x08000000           //指令在location配置中出现
+        #define NGX_HTTP_UPS_CONF         0x10000000           //指令在upstream配置中出现
+        #define NGX_HTTP_SIF_CONF         0x20000000
+        #define NGX_HTTP_LIF_CONF         0x40000000
+        #define NGX_HTTP_LMT_CONF         0x80000000
+
+        #define NGX_HTTP_MAIN_CONF_OFFSET  offsetof(ngx_http_conf_ctx_t, main_conf)
+        #define NGX_HTTP_SRV_CONF_OFFSET   offsetof(ngx_http_conf_ctx_t, srv_conf)
+        #define NGX_HTTP_LOC_CONF_OFFSET   offsetof(ngx_http_conf_ctx_t, loc_conf)
+        typedef struct {
+            void        **main_conf;
+            void        **srv_conf;
+            void        **loc_conf;
+        } ngx_http_conf_ctx_t;
+
+    其中在./src/core/ngx_conf_file.h
+        #define NGX_CONF_NOARGS      0x00000001                 //不带参数
+        #define NGX_CONF_TAKE1       0x00000002                 //带一个参数
+        #define NGX_CONF_TAKE2       0x00000004                 //带两个参数
+        #define NGX_CONF_TAKE3       0x00000008                 //带三个参数
+        #define NGX_CONF_TAKE4       0x00000010
+        #define NGX_CONF_TAKE5       0x00000020
+        #define NGX_CONF_TAKE6       0x00000040
+        #define NGX_CONF_TAKE7       0x00000080
+        struct ngx_command_s {
+            ngx_str_t             name;                      //命令名称
+            ngx_uint_t            type;                      //命令类型
+            char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);     //执行该命令的函数
+            ngx_uint_t            conf;                      //配置信息
+            ngx_uint_t            offset;                    //偏移量
+            void                 *post;                      //这个变量基本上都是NULL,
+        };
+
+    结构体中成员是多了点， 不过各司其职， 都有用处。下面分别来看看：
+        name : 是指令的字符串(就是指令的名称)，不能包含空格, 类型为ngx_str_t。通常都是ngx_str("proxy_pass")这种方式来实例化。
+        type : 表示集合， 表明这个指令可以在哪里出现合法，指令可以有几个参数等信息。应用中，标识的就是上面定义的多个值的BIT或。
+        set : 函数指针，它指向的函数用来进行模块配置。这个set函数一般用来将配置文件中的参数传递给程序，并保存在配置结构体中。
+              该函数有三个入参：
+              1) 指向ngx_conf_t的指针， 这个结构体里包含需要传递给指令的参数
+              2) 指向结构体ngx_command_t的指针
+              3) 指向模块自定义配置结构体的指针
+            set函数会在遇到指令时执行，Nginx提供了多个函数用来保存特定类型的数据，这些函数包含有：
+            * ngx_conf_set_flag_slot: 将 "on" or "off" 转换成 1 or 0
+            * ngx_conf_set_str_slot: 将字符串保存为ngx_str_t
+            * ngx_conf_set_num_slot: 解析一个数字并保存为int
+            * ngx_conf_set_size_slot: 解析一个数据大小(如："8k", "1m") 并保存为size_t
+            在./src/core/ngx_conf_file中还定义了下面的函数：
+                char *ngx_conf_set_flag_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);  //将 "on" or "off" 转换成 1 or 0
+                char *ngx_conf_set_str_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);   //将字符串保存为ngx_str_t
+                char *ngx_conf_set_str_array_slot(ngx_conf_t *cf, ngx_command_t *cmd,
+                    void *conf);                                                               //将字符串转换成ngx_array_t
+                char *ngx_conf_set_keyval_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);//转换成ngx_keyval_t
+                char *ngx_conf_set_num_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);   //转成ngx_keyval_t
+                char *ngx_conf_set_size_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);  //解析一个数据大小并保存为size_t
+                char *ngx_conf_set_off_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);   //转成off_t类型
+                char *ngx_conf_set_msec_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);  //转成ngx_msec_t类型
+                char *ngx_conf_set_sec_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);   //转成time_t类型
+                char *ngx_conf_set_bufs_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);  //转成ngx_bufs_t类型
+                char *ngx_conf_set_enum_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);  //转成ngx_conf_enum_t类型
+                char *ngx_conf_set_bitmask_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf); //转成ngx_conf_bitmask_t
+
+            这些内置函数如何知道把数据放在哪里?这就是接下来两个结构体成员conf和offset要做的事情了：
+        conf : 告诉nginx把数据存在模块的哪个配置中，是main, server还是location配置。
+        offset : 确定到底是保存在结构体的哪个位置。
+        post : 指向模块在读配置的时候需要的一些零碎变量。 一般它是NULL。
+
+
+    命令数组是以ngx_null_command做为最后元素结尾的。
+
+2.3 模块上下文
+    静态的ngx_http_module_t结构体，包含一大坨函数引用，用来创建和合并三段配置 (main,server,location)，命名方式一般是：
+        ngx_http_<module name>_module_ctx
+    这些函数引用依次是:
+        * preconfiguration 在读入配置前调用
+        * postconfiguration 在读入配置后调用
+        * create_main_conf 在创建main配置时调用（比如，用来分配空间和设置默认值）
+        * init_main_conf 在初始化main配置时调用（比如，把原来的默认值用nginx.conf读到的值来覆盖）
+        * init_main_conf 在创建server配置时调用
+        * merge_srv_conf 合并server和main配置时调用
+        * create_loc_conf 创建location配置时调用
+        * merge_loc_conf 合并location和server配置时调用
+
+    函数的入参各不相同，取决于他们具体要做的事情。这里http/ngx_http_config.h是结构体的具体定义：
+
+t
+This is a static ngx_http_module_t struct, which just has a bunch of function references for creating the three configurations and merging them together. Its name is ngx_http_<module name>_module_ctx. In order, the function references are:
+
+    preconfiguration
+    postconfiguration
+    creating the main conf (i.e., do a malloc and set defaults)
+    initializing the main conf (i.e., override the defaults with what's in nginx.conf)
+    creating the server conf
+    merging it with the main conf
+    creating the location conf
+    merging it with the server conf
+
+These take different arguments depending on what they're doing. Here's the struct definition, taken from http/ngx_http_config.h, so you can see the different function signatures of the callbacks:

@@ -5,6 +5,7 @@ http://www.evanmiller.org/nginx-modules-guide.html
 而nginx有自己的模块链，对于不同需求， nginx可以使用不同的模块来应对请求。
 
 下面是文章的主要内容部分的翻译：
+
 Nginx模块代表的高级别概述：
 发现nginx模块有三个角色：
 1) 处理请求和产生响应的处理器
@@ -385,26 +386,146 @@ nginx带有两种负载均衡模块：
                     "Failed to allocate response buffer.");
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
-
             b->pos = some_bytes; /* first position in memory of the data */
             b->last = some_bytes + some_bytes_length; /* last position */
-
             b->memory = 1; /* content is in read-only memory */
             /* (i.e., filters should copy it rather than rewrite in place) */
-
             b->last_buf = 1; /* there will be no more buffers in the request */
-            
-Now the module attaches it to the chain link:
+        下面将模块自身附加到chain link中：
+            out.buf = b;
+            out.next = NULL;
+        最后， 发送body, 并返回输出过滤器chain的状态码，一气呵成。
+            return ngx_http_output_filter(r, &out);
 
-    out.buf = b;
-    out.next = NULL;
+        缓冲区链是nginx IO模型的重要部分， 因此你应该了解它们如何工作。
 
-FINALLY, we send the body, and return the status code of the output filter chain all in one go:
+        琐事问题 : 为什么缓冲区要有last_buf变量，当我们能通过检查next是否为NULL来决定是否在链条的尾端?
+        答案 : 链条可能不完整， 例如， 具有多个缓冲区， 但这个请求或响应中的所有的缓冲区并非所有都完整。
+        因此一些缓冲区是在链条的尾端，但不在请求的尾端。 这个可以让我们做到...
 
-    return ngx_http_output_filter(r, &out);
+    2)  剖析上游处理器(也即所谓的代理 a.k.a Proxy)
+    我稍稍挥舞下手， 希望你的处理器产生一个响应。 有时候你可能获取到的响应仅仅是一段C代码响应，但通常你想和另外的服务器交流(例如，如果你正在写一个模块来实现另外个网络协议)。 你可以自己完成所有的网络编程， 但是如果接收到部分响应的话会发生什么事情?
+    你不想使用自己的事件循环来阻止主事件循环， 而你又在等待其他的响应。 这样会伤害nginx的性能。 幸好，nginx允许你刚好
+    利用它自己的机制来处理后端服务器(叫做上游处理器)， 因此你的模块可以和另外的服务器交流也不会影响到其他的请求。
+    这节描述模块如何和上游处理器交流， 比如memcached, fastCGI或另外一个HTTP服务器。
+        (1) 上游回调总结
+        不像其他模块的处理器方法， 上游模块处理器方法做很少的实际事情。 它不会调用ngx_http_output_filter。
+        它仅仅设置回调方法，在上游服务器准备被写入和读取的时候被调用。这里有6个可用的回调钩子：
+            create_request 创建一个发送到上游的请求缓冲区(或者缓冲区链)
+            reinit_request 当到后端的链接被重置的时候被调用(仅仅在create_request被第二次调用前)
+            process_header 处理上游响应的第一个位, 通常保存一个到上游有效载荷的指针。
+            abort_request 如果客户端终止请求的话被调用
+            finalize_request 当ngxin完成从上游读取的时候被调用
+            input_filter 是一个body过滤器， 可在响应body被调用。(e.g., 比如移除掉拖车)
+        那么这些如何附加起来的呢？ 这里是一个例子， 简单版本的代理模块处理器：
+            static ngx_int_t
+            ngx_http_proxy_handler(ngx_http_request_t *r)
+            {
+                ngx_int_t                   rc;
+                ngx_http_upstream_t        *u;
+                ngx_http_proxy_loc_conf_t  *plcf;
 
-Buffer chains are a critical part of Nginx's IO model, so you should be comfortable with how they work.
+                plcf = ngx_http_get_module_loc_conf(r, ngx_http_proxy_module);
 
-Trivia question: Why does the buffer have the last_buf variable, when we can tell we're at the end of a chain by checking "next" for NULL?
+            /* set up our upstream struct */
+                u = ngx_pcalloc(r->pool, sizeof(ngx_http_upstream_t));
+                if (u == NULL) {
+                    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+                }
 
-Answer: A chain might be incomplete, i.e., have multiple buffers, but not all the buffers in this request or response. So some buffers are at the end of the chain but not the end of a request. This brings us to…
+                u->peer.log = r->connection->log;
+                u->peer.log_error = NGX_ERROR_ERR;
+
+                u->output.tag = (ngx_buf_tag_t) &ngx_http_proxy_module;
+
+                u->conf = &plcf->upstream;
+
+            /* attach the callback functions */
+                u->create_request = ngx_http_proxy_create_request;
+                u->reinit_request = ngx_http_proxy_reinit_request;
+                u->process_header = ngx_http_proxy_process_status_line;
+                u->abort_request = ngx_http_proxy_abort_request;
+                u->finalize_request = ngx_http_proxy_finalize_request;
+
+                r->upstream = u;
+
+                rc = ngx_http_read_client_request_body(r, ngx_http_upstream_init);
+
+                if (rc >= NGX_HTTP_SPECIAL_RESPONSE) {
+                    return rc;
+                }
+
+                return NGX_DONE;
+            }
+        它做了点看家的事情， 但重要的部分是回调。 也要注意点ngx_http_read_client_request_body。
+        它设置另外的回调， 当nginx完成从客户端的读取的使用调用。
+
+        这些回调都将做些什么？ 通常，reinit_request, abort_request和finalize_request将设置或者重置一些类型的内部状态，
+        这些都只有几行的长度。 真正的驮马是create_request和process_header.
+
+        (2)  create_request回调函数
+        为了简单起见， 让我们假设有一个上游服务器读进一个字符， 打印出来两个字符。
+        我的方法会像什么样子?
+        create_request需要为单个字符请求分配一个缓冲区，为那个缓冲区分配一个chain link，然后指向到那个chain link的上游结构体。
+        它看起来就像下面的代码：
+            static ngx_int_t
+            ngx_http_character_server_create_request(ngx_http_request_t *r)
+            {
+            /* make a buffer and chain */
+                ngx_buf_t *b;
+                ngx_chain_t *cl;
+
+                b = ngx_create_temp_buf(r->pool, sizeof("a") - 1);
+                if (b == NULL)
+                    return NGX_ERROR;
+
+                cl = ngx_alloc_chain_link(r->pool);
+                if (cl == NULL)
+                    return NGX_ERROR;
+
+            /* hook the buffer to the chain */
+                cl->buf = b;
+            /* chain to the upstream */
+                r->upstream->request_bufs = cl;
+
+            /* now write to the buffer */
+                b->pos = "a";
+                b->last = b->pos + sizeof("a") - 1;
+
+                return NGX_OK;
+            }
+        那也不是很差劲，是吗？ 当然， 在现实中你将可能想要以一些有意思的方式使用请求URI。
+        可以在r->uri中作为ngx_str_t使用， 并且GET参数是在r->args， 并且不要忘记你也会访问请求headers和cookies.
+
+        (3)  process_header回调函数
+        现在轮到process_header了。 就像create_request将指针挂到请求body上一样， process_header将响应指针移到客户端可以接受到
+        的部分。它也读取从上游过来的header，并相应的设置客户端响应headers。
+        
+        这里有个小例子，读进两个字符的响应。我们假设第一个字符代表“状态”字符。如果它是问号，我们将返回一个404错误并丢弃剩下的那个字符。如果它是空格，我们将以 200 OK的响应把另一个字符返回给客户端。好吧，这不是什么多有用的协议，不过可以作为一个不错的例子。那么我们如何来实现这个process_header 函数呢？ 
+
+Here's a bare-minimum example, reading in that two-character response. Let's suppose the first character is the "status" character. If it's a question mark, we want to return a 404 File Not Found to the client and disregard the other character. If it's a space, then we want to return the other character to the client along with a 200 OK response. All right, it's not the most useful protocol, but it's a good demonstration. How would we write this process_header function?
+
+static ngx_int_t
+ngx_http_character_server_process_header(ngx_http_request_t *r)
+{
+    ngx_http_upstream_t       *u;
+    u = r->upstream;
+
+    /* read the first character */
+    switch(u->buffer.pos[0]) {
+        case '?':
+            r->header_only; /* suppress this buffer from the client */
+            u->headers_in.status_n = 404;
+            break;
+        case ' ':
+            u->buffer.pos++; /* move the buffer to point to the next character */
+            u->headers_in.status_n = 200;
+            break;
+    }
+
+    return NGX_OK;
+}
+
+That's it. Manipulate the header, change the pointer, it's done. Notice that headers_in is actually a response header struct like we've seen before (cf. http/ngx_http_request.h), but it can be populated with the headers from the upstream. A real proxying module will do a lot more header processing, not to mention error handling, but you get the main idea.
+
+But.. what if we don't have the whole header from the upstream in one buffer?

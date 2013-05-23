@@ -136,7 +136,7 @@ struct ngx_module_s {
     uintptr_t             spare_hook7;
 };
 
-
+// ngx_core_module_t是核心模块结构体，包含一个模块名称以及两个指针函数create_conf和init_conf
 typedef struct {
     ngx_str_t             name;
     void               *(*create_conf)(ngx_cycle_t *cycle);

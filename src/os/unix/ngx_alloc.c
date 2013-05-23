@@ -18,7 +18,7 @@ void *
 ngx_alloc(size_t size, ngx_log_t *log)
 {
     void  *p;
-
+    //从这里可以看到，ngx_alloc实际上就是调用malloc函数分配内存的。
     p = malloc(size);
     if (p == NULL) {
         ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
@@ -48,12 +48,14 @@ ngx_calloc(size_t size, ngx_log_t *log)
 
 #if (NGX_HAVE_POSIX_MEMALIGN)
 
+//从这个函数的实现体，我们可以看到p = ngx_memalign(NGX_POOL_ALIGNMENT, size, log);  
+//函数分配以NGX_POOL_ALIGNMENT字节对齐的size字节的内存，在src/core/ngx_palloc.h文件中：  
 void *
 ngx_memalign(size_t alignment, size_t size, ngx_log_t *log)
 {
     void  *p;
     int    err;
-
+    // 该函数分配以alignment为对齐的size字节的内存大小，其中p指向分配的内存块。
     err = posix_memalign(&p, alignment, size);
 
     if (err) {
