@@ -206,18 +206,366 @@
         * create_loc_conf 创建location配置时调用
         * merge_loc_conf 合并location和server配置时调用
 
-    函数的入参各不相同，取决于他们具体要做的事情。这里http/ngx_http_config.h是结构体的具体定义：
+    函数的入参各不相同，取决于他们具体要做的事情。这里./src/http/ngx_http_config.h是结构体的具体定义：
+        typedef struct {
+            ngx_int_t   (*preconfiguration)(ngx_conf_t *cf);                      //在读入配置前调用
+            ngx_int_t   (*postconfiguration)(ngx_conf_t *cf);                     //在读入配置后调用
+            void       *(*create_main_conf)(ngx_conf_t *cf);                      //在创建main配置时调用
+            char       *(*init_main_conf)(ngx_conf_t *cf, void *conf);            //在初始化main配置时调用
+            void       *(*create_srv_conf)(ngx_conf_t *cf);                       //在创建server配置时调用
+            char       *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);//在合并server配置时调用
+            void       *(*create_loc_conf)(ngx_conf_t *cf);                       //在创建location配置时调用
+            char       *(*merge_loc_conf)(ngx_conf_t *cf, void *prev, void *conf);//在合并location配置时调用
+        } ngx_http_module_t;
 
-t
-This is a static ngx_http_module_t struct, which just has a bunch of function references for creating the three configurations and merging them together. Its name is ngx_http_<module name>_module_ctx. In order, the function references are:
+    可以把你不需要的函数设置为NULL，Nginx会忽略掉他们。
 
-    preconfiguration
-    postconfiguration
-    creating the main conf (i.e., do a malloc and set defaults)
-    initializing the main conf (i.e., override the defaults with what's in nginx.conf)
-    creating the server conf
-    merging it with the main conf
-    creating the location conf
-    merging it with the server conf
+    绝大多数的 handler只使用最后两个: 一个用来为特定location配置来分配内存，(叫做 ngx_http_<module name>_create_loc_conf)，
+    另一个用来设定默认值以及合并继承过来的配置值(叫做 ngx_http_<module name>_merge_loc_conf)。合并函数同时还会检查配置
+    的有效性，如果有错误，则server的启动将被挂起。
 
-These take different arguments depending on what they're doing. Here's the struct definition, taken from http/ngx_http_config.h, so you can see the different function signatures of the callbacks:
+    下面是一个使用模块上下文结构体的例子:
+        static ngx_http_module_t  ngx_http_circle_gif_module_ctx = {
+            NULL,                          /* preconfiguration */
+            NULL,                          /* postconfiguration */
+
+            NULL,                          /* create main configuration */
+            NULL,                          /* init main configuration */
+
+            NULL,                          /* create server configuration */
+            NULL,                          /* merge server configuration */
+
+            ngx_http_circle_gif_create_loc_conf,  /* create location configuration */
+            ngx_http_circle_gif_merge_loc_conf /* merge location configuration */
+        };
+    现在开始讲得更深一点。这些配置回调函数看其来很像，所有模块都一样，而且Nginx的API都会用到这个部分，所以值得好好看看。
+
+2.3.1. create_loc_conf
+    下面这段摘自我自己写的模块circle_gif(源代码)，create_loc_conf的骨架大概就是这个样子. 它的入参是(ngx_conf_t),
+    返回值是更新了的模块配置结构体(在这里是ngx_http_circle_gif_loc_conf_t).
+        static void *
+        ngx_http_circle_gif_create_loc_conf(ngx_conf_t *cf)
+        {
+            ngx_http_circle_gif_loc_conf_t  *conf;
+            conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_circle_gif_loc_conf_t));
+            if (conf == NULL) {
+                return NGX_CONF_ERROR;
+            }
+            conf->min_radius = NGX_CONF_UNSET_UINT;
+            conf->max_radius = NGX_CONF_UNSET_UINT;
+            return conf;
+        }
+    首先需要指出的是Nginx的内存分配: 只要使用了ngx_palloc(malloc的一个包装函数)或者ngx_pcalloc(calloc的包装函数)，
+    就不用担心内存的释放了。(TODO: to see why?) UNSET可能的常量有:
+        NGX_CONF_UNSET_UINT, 
+        NGX_CONF_UNSET_PTR, 
+        NGX_CONF_UNSET_SIZE, 
+        NGX_CONF_UNSET_MSEC, 
+        NGX_CONF_UNSET，
+
+        #define NGX_CONF_UNSET       -1                                              //无所不包的
+        #define NGX_CONF_UNSET_UINT  (ngx_uint_t) -1                                 //
+        #define NGX_CONF_UNSET_PTR   (void *) -1
+        #define NGX_CONF_UNSET_SIZE  (size_t) -1
+        #define NGX_CONF_UNSET_MSEC  (ngx_msec_t) -1
+    UNSET让合并函数知道哪些变量是需要覆盖的。
+
+2.3.2. merge_loc_conf
+
+    下面的例子是我的模块circle_gif中的合并函数：
+        static char *
+        ngx_http_circle_gif_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+        {
+            ngx_http_circle_gif_loc_conf_t *prev = parent;
+            ngx_http_circle_gif_loc_conf_t *conf = child;
+
+            ngx_conf_merge_uint_value(conf->min_radius, prev->min_radius, 10);
+            ngx_conf_merge_uint_value(conf->max_radius, prev->max_radius, 20);
+
+            if (conf->min_radius < 1) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, 
+                    "min_radius must be equal or more than 1");
+                return NGX_CONF_ERROR;
+            }
+            if (conf->max_radius < conf->min_radius) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, 
+                    "max_radius must be equal or more than min_radius");
+                return NGX_CONF_ERROR;
+            }
+
+            return NGX_CONF_OK;
+        }
+    这里的需要注意的是Nginx提供了一些好用的合并函数用来合并不同类型的数据(ngx_conf_merge_<data type>_value)，这类函数的入参是：
+    1) 当前location 的变量值
+    2) 如果第一个参数没有被设置而采用的值
+    3) 如果第一第二个参数都没有被设置而采用的值
+
+    结果会被保存在第一个参数中。能用的合并函数包括ngx_conf_merge_size_value, ngx_conf_merge_msec_value 等等. 可参见 core/ngx_conf_file.h. 这些都是些宏定义：
+        ngx_conf_merge_value(conf, prev, default)
+        ngx_conf_merge_ptr_value(conf, prev, default)
+        ngx_conf_merge_uint_value(conf, prev, default)
+        ngx_conf_merge_msec_value(conf, prev, default)
+        ngx_conf_merge_sec_value(conf, prev, default)
+        ngx_conf_merge_size_value(conf, prev, default)
+        ngx_conf_merge_off_value(conf, prev, default)
+        ngx_conf_merge_str_value(conf, prev, default)
+        ngx_conf_merge_bufs_value(conf, prev, default_num, default_size)
+        ngx_conf_merge_bitmask_value(conf, prev, default)
+
+    问: 第一个参数是传值的，那如何能做到将结果保存到第一个参数中？
+    答: 这些函数都是由预处理命令定义的（在真正编译之前，它们会被扩展成一些if语句）
+
+    同时还需要注意的是错误的产生。函数会往log文件写一些东西，同时返回NGX_CONF_ERROR。这个返回值会将server的启动挂起。
+    (因为被标示为NGX_LOG_EMERG级别，所以错误同时还会输出到标准输出。作为参考，core/ngx_log.h列出了所有的日志级别。)
+
+2.4. 模块定义
+
+    接下来我们间接地介绍更深一层：结构体ngx_module_t。该结构体变量命名方式为ngx_http_<module name>_module。
+    它包含模块的内容和指令执行方式，同时也还包含一些回调函数（退出线程，退出进程，等等）。
+    模块定义在有的时候会被用作查找的关键字，来查找与特定模块相关联的数据。模块定义通常像是这样：
+        ngx_module_t  ngx_http_<module name>_module = {
+            NGX_MODULE_V1,                       //模块前7个字段使用预编译命令定义替换
+            &ngx_http_<module name>_module_ctx,  //模块上下文
+            ngx_http_<module name>_commands,     //模块指令
+            NGX_HTTP_MODULE,                     //模块类型
+            NULL,                                //初始化master
+            NULL,                                //初始化模块
+            NULL,                                //初始化进程
+            NULL,                                //初始化线程
+            NULL,                                //退出线程
+            NULL,                                //退出进程
+            NULL,                                //退出master
+            NGX_MODULE_V1_PADDING                //模块最后8个字段的填充， 替补钩子
+        };
+    ...仅仅替换掉合适的<module name>就可以了。
+    模块可以添加一些回调函数来处理线程/进程的创建和销毁，但是绝大多数模块都用NULL忽略这些东东。
+    (关于这些回调函数的入参，可以参考 core/ngx_conf_file.h.)
+
+2.5. 模块装载
+    模块的装载方式取决于模块的类型：handler、filter还是load-balancer。所以具体的装载细节将留在其各自的章节中再做介绍。
+
+3. Handlers
+    接下来我们把模块的细节放到显微镜下面来看，它们到底怎么运行的。
+
+3.1. 剖析Handler(非代理)
+    Handler一般做4件事：
+        获取location配置;
+        生成合适的响应;
+        发送响应头;
+        发送响应体。
+    Handler有一个参数，即请求结构体。
+    请求结构体包含很多关于客户请求的有用信息，比如说请求方法，URI，请求头等等。我们一个个地来看。
+
+3.1.1. 获取location配置
+    这部分很简单。只需要调用ngx_http_get_module_loc_conf，传入当前请求的结构体和模块定义即可。
+    下面是我的circle gif handler的相关部分:
+    static ngx_int_t
+    ngx_http_circle_gif_handler(ngx_http_request_t *r)
+    {
+        ngx_http_circle_gif_loc_conf_t  *circle_gif_config;
+        circle_gif_config = ngx_http_get_module_loc_conf(r, ngx_http_circle_gif_module);
+        ......
+    现在我们就可以访问之前在合并函数中设置的所有变量了。
+3.1.2. 生成响应
+    这才是模块真正干活的地方，很有趣哦。
+    这里要用到请求结构体，主要是这些结构体成员:
+        typedef struct {
+        ...
+        /* the memory pool, used in the ngx_palloc functions */
+            ngx_pool_t                       *pool;
+            ngx_str_t                         uri;
+            ngx_str_t                         args;
+            ngx_http_headers_in_t             headers_in;
+
+        ...
+        } ngx_http_request_t;
+    uri : 是请求的路径, e.g. "/query.cgi". 
+    args : 请求串参数中问号后面的参数 (e.g. "name=john"). 
+    headers_in : 包含有很多有用的东西，比如说cookie啊，浏览器信息啊什么的，但是许多模块可能用不到这些东东。
+    如果你感兴趣的话，可以参看http/ngx_http_request.h 。
+
+    对于生成输出，这些信息应该是够了。完整的ngx_http_request_t结构体定义在http/ngx_http_request.h。
+
+3.1.3. 发送响应头
+
+    响应头存放在结构体headers_out中，它的引用存放在请求结构体中。
+    Handler设置相应的响应头的值，然后调用ngx_http_send_header(r)。
+
+    headers_out中比较有用的是：
+        typedef stuct {
+        ...
+            ngx_uint_t                        status;             // HTTP Status Code
+            size_t                            content_type_len;   // Content-type Length
+            ngx_str_t                         content_type;       // Content-type value
+            ngx_table_elt_t                  *content_encoding;   // Content-Encoding
+            off_t                             content_length_n;   // Content-Length 100
+            time_t                            date_time;
+            time_t                            last_modified_time;
+        ..
+        } ngx_http_headers_out_t;
+    (剩下的可以在 http/ngx_http_request.h找到。) 举例来说，如果一个模块要设置:
+    Content-Type 为 "image/gif", Content-Length 为 100, 并返回 HTTP 200 OK 的响应, 代码应当是这样的:
+        r->headers_out.status = NGX_HTTP_OK;
+        r->headers_out.content_length_n = 100;
+        r->headers_out.content_type.len = sizeof("image/gif") - 1;
+        r->headers_out.content_type.data = (u_char *) "image/gif";
+        ngx_http_send_header(r);
+
+    上面的设定方式针对大多数参数都是有效的。但一些头部的变量设定要比上面的例子要麻烦；比如:
+    content_encoding 还含有类型(ngx_table_elt_t*)， 所以必须先为此分配空间。
+    可以用一个叫做ngx_list_push的函数来做，它传入一个ngx_list_t（与数组类似），返回一个list中的新成员（类型是ngx_table_elt_t）。
+    下面的代码设置了Content-Encoding为"deflate"并发送了响应头：
+
+    r->headers_out.content_encoding = ngx_list_push(&r->headers_out.headers);
+    if (r->headers_out.content_encoding == NULL) {
+        return NGX_ERROR;
+    }
+    r->headers_out.content_encoding->hash = 1;
+    r->headers_out.content_encoding->key.len = sizeof("Content-Encoding") - 1;
+    r->headers_out.content_encoding->key.data = (u_char *) "Content-Encoding";
+    r->headers_out.content_encoding->value.len = sizeof("deflate") - 1;
+    r->headers_out.content_encoding->value.data = (u_char *) "deflate";
+    ngx_http_send_header(r);
+
+    当头部有多个值时，这个机制常常被用到。它（理论上讲）使得过滤模块添加、删除某个值而保留其他值的时候更加容易，在操纵字符串的时候，不需要把字符串重新排序。
+
+3.1.4. 发送响应体
+
+    现在模块已经生成了一个响应，并存放在了内存中。接下来它需要将这个响应分配给一个特定的缓冲区，然后把这个缓冲区加入到链表，
+    然后调用链表中“发送响应体”的函数。
+
+    链表在这里起什么作用呢？Nginx 中，handler模块（其实filter模块也是）生成响应到buffer中是同时完成的；
+    链表中的每个元素都有指向下一个元素的指针，如果是NULL 则说明链表到头了。简单起见，我们假设只有一个buffer。
+
+    首先，模块需要先声明buffer和链表：
+
+        ngx_buf_t    *b;
+        ngx_chain_t   out;
+
+    接着，需要给buffer分配空间，并将我们的响应数据指向它：
+
+        b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+        if (b == NULL) {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                "Failed to allocate response buffer.");
+            return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+
+        b->pos = some_bytes; /* 数据内存的开始位置 */
+        b->last = some_bytes + some_bytes_length; /* 数据内存的最后位置 */
+
+        b->memory = 1; /* 内存位于只读内存中 */
+        /* (i.e., 过滤器不能原处修改， 只能拷贝一份 */
+
+        b->last_buf = 1; /* 请求中不再有缓冲 */
+
+    现在就可以把数据挂在链表上了：
+
+        out.buf = b;
+        out.next = NULL;
+
+    最后，我们发送这个响应体，返回值是链表在一次调用后的状态:
+        return ngx_http_output_filter(r, &out);
+
+    Buffer链是Nginx IO模型中的关键部分，你得比较熟悉它的工作方式。
+
+    问: 为什么buffer还需要有个`last_buf`变量啊，我们不是可以通过判断next是否是NULL来知道哪个是链表的最末端了吗？
+    答: 链表可能是不完整的，比如说，当有多个buffer的时候，并不是所有的buffer都属于当前的请求和响应。
+    所以有些buffer可能是buffer链表的表尾，但是不是请求的结束。这给我们引入了接下来的内容……
+
+3.2. 剖析Upstream(又称 Proxy) Handler
+
+    我已经帮你了解了如何让你的handler来产生响应。有些时候你可以用一小段C代码就可以得到响应，但是通常情况下你需要同另外一台server打交道（比如你正在写一个用来实现某种网络协议的模块）。你当然可以自己实现一套网络编程的东东，但是如果你只收到部分的响应，需要等待余下的响应数据，你会怎么办？你不会想阻塞整个事件处理循环吧？这样会毁掉Nginx的良好性能！幸运的是，Nginx允许你在它处理后端服务器（叫做"upstreams"）的机制上加入你的回调函数,因此你的模块将可以和其他的server通信,同时还不会妨碍其他的请求。这一节将介绍模块如何和一个upstream（如 Memcached, FastCGI,或者另一个 HTTP server）通信。
+
+3.2.1. Upstream 回调函数概要
+
+    与其他模块的回调处理函数不一样，upstream模块的处理函数几乎不做“实事”。它压根不调用ngx_http_output_filter。
+    它仅仅是告诉回调函数什么时候可以向upstream server写数据了，以及什么时候能从upstream server读数据了。
+    实际上它有6个可用的钩子： 
+    create_request : 生成发送到upstream server的请求缓冲（或者一条缓冲链）
+    reinit_request : 在与后端服务器连接被重置的情况下（在create_request 被第二次调用之前）被调用 
+    process_header : 处理upstream 响应的第一个bit，通常是保存一个指向upstream "payload"的指针 
+    abort_request : 在客户端放弃请求时被调用 
+    finalize_request : 在Nginx完成从upstream读取数据后调用
+    input_filter : 这是一个消息体的filter，用来处理响应消息体(例如把尾部删除) 这些钩子是怎么勾上去的呢？
+
+    下面是一个例子，简单版本的代理模块处理函数：
+        static ngx_int_t
+        ngx_http_proxy_handler(ngx_http_request_t *r)
+        {
+            ngx_int_t                   rc;
+            ngx_http_upstream_t        *u;
+            ngx_http_proxy_loc_conf_t  *plcf;
+
+            plcf = ngx_http_get_module_loc_conf(r, ngx_http_proxy_module);
+
+        /* set up our upstream struct */
+            u = ngx_pcalloc(r->pool, sizeof(ngx_http_upstream_t));
+            if (u == NULL) {
+                return NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
+
+            u->peer.log = r->connection->log;
+            u->peer.log_error = NGX_ERROR_ERR;
+
+            u->output.tag = (ngx_buf_tag_t) &ngx_http_proxy_module;
+
+            u->conf = &plcf->upstream;
+
+        /* attach the callback functions */
+            u->create_request = ngx_http_proxy_create_request;
+            u->reinit_request = ngx_http_proxy_reinit_request;
+            u->process_header = ngx_http_proxy_process_status_line;
+            u->abort_request = ngx_http_proxy_abort_request;
+            u->finalize_request = ngx_http_proxy_finalize_request;
+
+            r->upstream = u;
+
+            rc = ngx_http_read_client_request_body(r, ngx_http_upstream_init);
+
+            if (rc >= NGX_HTTP_SPECIAL_RESPONSE) {
+                return rc;
+            }
+
+            return NGX_DONE;
+        }
+    看上去都是些例行事务，不过重要的是那些回调函数。同时还要注意的是ngx_http_read_client_request_body，它又设置了一个回调函数，在Nginx完成从客户端读数据后会被调用。
+
+    这些个回调函数都要做些什么工作呢？通常情况下，reinit_request, abort_request, 和 finalize_request用来设置或重置一些内部状态，但这些都是几行代码的事情。真正做苦力的是create_request 和 process_header。
+
+3.2.2. create_request 回调函数
+
+    简单起见，假设我有一个upstream server，它读入一个字符打印出两个字符。那么函数应该如何来写呢？
+    create_request需要申请一个buffer来存放“一个字符”的请求，为buffer申请一个链表，并且把链表挂到upstream结构体上。
+    看起来就像这样：
+        static ngx_int_t
+        ngx_http_character_server_create_request(ngx_http_request_t *r)
+        {
+        /* make a buffer and chain */
+            ngx_buf_t *b;
+            ngx_chain_t *cl;
+
+            b = ngx_create_temp_buf(r->pool, sizeof("a") - 1);
+            if (b == NULL)
+                return NGX_ERROR;
+
+            cl = ngx_alloc_chain_link(r->pool);
+            if (cl == NULL)
+                return NGX_ERROR;
+
+        /* hook the buffer to the chain */
+            cl->buf = b;
+        /* chain to the upstream */
+            r->upstream->request_bufs = cl;
+
+        /* now write to the buffer */
+            b->pos = "a";
+            b->last = b->pos + sizeof("a") - 1;
+
+            return NGX_OK;
+        }
+
+    不是很难，对吧？当然实际应用中你很可能还会用到请求里面的URI。
+    r->uri作为一个 ngx_str_t类型也是有效的，GET的参数在r->args中，最后别忘了你还能访问请求头和cookie信息。
+
+    

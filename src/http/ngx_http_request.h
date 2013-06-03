@@ -64,21 +64,21 @@
 #define NGX_HTTP_LOG_UNSAFE                8
 
 
-#define NGX_HTTP_CONTINUE                  100
-#define NGX_HTTP_SWITCHING_PROTOCOLS       101
-#define NGX_HTTP_PROCESSING                102
+#define NGX_HTTP_CONTINUE                  100     //接收到请求的初始部分， 请客户端继续。发送了这个状态码后，服务器在接收到请求之后必须响应。
+#define NGX_HTTP_SWITCHING_PROTOCOLS       101     //说明服务器正在根据客户端的指定， 将协议切换成Update首部所列的协议
+#define NGX_HTTP_PROCESSING                102     //处理中
 
-#define NGX_HTTP_OK                        200
-#define NGX_HTTP_CREATED                   201
-#define NGX_HTTP_ACCEPTED                  202
-#define NGX_HTTP_NO_CONTENT                204
-#define NGX_HTTP_PARTIAL_CONTENT           206
+#define NGX_HTTP_OK                        200     //服务器已成功处理请求
+#define NGX_HTTP_CREATED                   201     //对那些要服务器创建对象的请求来说， 资源已创建完毕
+#define NGX_HTTP_ACCEPTED                  202     //请求已接受， 但服务器尚未处理
+#define NGX_HTTP_NO_CONTENT                204     //响应报文包含一些首部和一个状态行， 但不包含实体的主体内容
+#define NGX_HTTP_PARTIAL_CONTENT           206     //部分请求成功
 
-#define NGX_HTTP_SPECIAL_RESPONSE          300
-#define NGX_HTTP_MOVED_PERMANENTLY         301
-#define NGX_HTTP_MOVED_TEMPORARILY         302
-#define NGX_HTTP_SEE_OTHER                 303
-#define NGX_HTTP_NOT_MODIFIED              304
+#define NGX_HTTP_SPECIAL_RESPONSE          300     //客户端实际请求了指向多个资源的URL。这个代码是和一个选项列表一起返回的，然后用户就可以选择他希望使用的选项了
+#define NGX_HTTP_MOVED_PERMANENTLY         301     //请求的URL已经移走。 响应中应该包含一个Location URL, 说明资源现在的位置。
+#define NGX_HTTP_MOVED_TEMPORARILY         302     //和301类似，但这里的搬离是临时的，客户端应该用Location首部给出的URL对资源进行临时定位
+#define NGX_HTTP_SEE_OTHER                 303     //告诉客户端应该用另一个URL获取资源。 这个新的URL位于响应报文的Location首部
+#define NGX_HTTP_NOT_MODIFIED              304     //客户端可以通过它们包含的请求首部发起条件请求。 这个代码说明资源尚未发生过变化。
 #define NGX_HTTP_TEMPORARY_REDIRECT        307
 
 #define NGX_HTTP_BAD_REQUEST               400
@@ -142,37 +142,37 @@
 
 
 typedef enum {
-    NGX_HTTP_INITING_REQUEST_STATE = 0,
-    NGX_HTTP_READING_REQUEST_STATE,
-    NGX_HTTP_PROCESS_REQUEST_STATE,
+    NGX_HTTP_INITING_REQUEST_STATE = 0,       //初始化请求状况
+    NGX_HTTP_READING_REQUEST_STATE,           //读取请求状况
+    NGX_HTTP_PROCESS_REQUEST_STATE,           //处理请求状况
 
-    NGX_HTTP_CONNECT_UPSTREAM_STATE,
-    NGX_HTTP_WRITING_UPSTREAM_STATE,
-    NGX_HTTP_READING_UPSTREAM_STATE,
+    NGX_HTTP_CONNECT_UPSTREAM_STATE,          //连接上游服务器状况
+    NGX_HTTP_WRITING_UPSTREAM_STATE,          //写上游服务器状况
+    NGX_HTTP_READING_UPSTREAM_STATE,          //读取上游服务器状况
 
-    NGX_HTTP_WRITING_REQUEST_STATE,
-    NGX_HTTP_LINGERING_CLOSE_STATE,
-    NGX_HTTP_KEEPALIVE_STATE
+    NGX_HTTP_WRITING_REQUEST_STATE,           //写请求状况
+    NGX_HTTP_LINGERING_CLOSE_STATE,           //逗留关闭状况
+    NGX_HTTP_KEEPALIVE_STATE                  //keepalive状况
 } ngx_http_state_e;
 
-
+// HTTP Header请求头部
 typedef struct {
-    ngx_str_t                         name;
-    ngx_uint_t                        offset;
-    ngx_http_header_handler_pt        handler;
+    ngx_str_t                         name;     //HTTP Header名称
+    ngx_uint_t                        offset;   //HTTP Header偏移量
+    ngx_http_header_handler_pt        handler;  //HTTP Header处理器指针
 } ngx_http_header_t;
 
-
+// HTTP header响应头部
 typedef struct {
-    ngx_str_t                         name;
-    ngx_uint_t                        offset;
+    ngx_str_t                         name;     //响应头部名称
+    ngx_uint_t                        offset;   //响应头部偏移量
 } ngx_http_header_out_t;
 
 
 typedef struct {
-    ngx_list_t                        headers;
+    ngx_list_t                        headers;                  //header lists
 
-    ngx_table_elt_t                  *host;
+    ngx_table_elt_t                  *host;                     //
     ngx_table_elt_t                  *connection;
     ngx_table_elt_t                  *if_modified_since;
     ngx_table_elt_t                  *if_unmodified_since;
@@ -354,7 +354,10 @@ struct ngx_http_posted_request_s {
 typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
 typedef void (*ngx_http_event_handler_pt)(ngx_http_request_t *r);
 
-
+/**
+ * 一个http请求，包含请求行、请求头、请求体、响应行、响应头、响应体。
+ * 
+ */
 struct ngx_http_request_s {
     uint32_t                          signature;         /* "HTTP" */
 

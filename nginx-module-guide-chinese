@@ -520,7 +520,7 @@ ngx_http_character_server_process_header(ngx_http_request_t *r)
 
 4.2.4. 状态保持
 
-    好了，还记得我说过abort_request, reinit_request和finalize_request 可以用来重置内部状态吗？这是因为许多upstream模块都有其内部状态。模块需要定义一个 自定义上下文结构 ，来标记目前为止从upstream读到了什么。这跟之前说的“模块上下文”不是一个概念。“模块上下文”是预定义类型，而自定义上下文结构可以包含任何你需要的数据和字段（这可是你自己定义的结构体）。这个结构体在create_request函数中被实例化，大概像这样：
+    好了，还记得我说过abort_request, reinit_request和finalize_request 可以用来重置内部状态吗？这是因为许多upstream模块都有其内部状态。模块需要定义一个自定义上下文结构 ，来标记目前为止从upstream读到了什么。这跟之前说的“模块上下文”不是一个概念。“模块上下文”是预定义类型，而自定义上下文结构可以包含任何你需要的数据和字段（这可是你自己定义的结构体）。这个结构体在create_request函数中被实例化，大概像这样：
 
     ngx_http_character_server_ctx_t   *p;   /* my custom context struct */
 
