@@ -291,6 +291,7 @@ function getAdjustPosition(&$array, $start, $end)
 }
 
 /** 将上述两个方法合并简化版本
+ * 参考文献 http://www.cnblogs.com/morewindows/archive/2011/08/13/2137415.html
  */
 function quick_sort(&$array, $start, $end)
 {
