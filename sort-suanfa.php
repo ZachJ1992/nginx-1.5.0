@@ -212,37 +212,12 @@ function quick_sort1($array)
     return array_merge($leftArray, array($middle), $rightArray);
 }
 
-/**     0   1   2   3    4   5   6
- * $a = 9   8   10  15   6   3   21        mid=0 start=0 end=6 中值为$a[0] = 9
- * 1) 从左到右循环找比$a[0]小的，mid++, 互换两个值
- *      9   8   10  15   6   3   21        mid = 1 i = 1 交换$a[1] 和 $a[1] 等于没有交换
- *      9   8   10  15   6   3   21        mid = 1 i = 2 循环不做什么
- *      9   8   10  15   6   3   21        mid = 1 i = 3 循环不做什么
- *      9   8   6   15   10  3   21        mid = 2 i = 4 $a[2]和$[4]交换
- *      9   8   6   3    10  15  21        mid = 3 i = 5 $a[3]和$[5]交换
- * 2) 交换此时mid对应的值和start值, 即交换$a[3]和$a[0]
- *      3   8   6   9    10  15  21
- * 3) 然后划分两个子数组，分别做上述操作
-        3   8   6   和   10  15  21
- * 最终排序结果:
- *      3   6   8   9    10  15  21
+/**
+ * 首先找个基准元素，并同时找出其在排序后的相应位置， 然后用该位置对数组分治递归实现
  */
 function quick_sort2(&$array, $start, $end)
 {
     if ($start >= $end) return;
-/*    $mid = $start;
-    for ($i = $start + 1; $i <= $end; $i++) {
-        if ($array[$i] < $array[$mid]) {
-            $mid++;
-            $tmp = $array[$i];
-            $array[$i] = $array[$mid];
-            $array[$mid] = $tmp;
-        }
-    }
-
-    $tmp = $array[$start];
-    $array[$start] = $array[$mid];
-    $array[$mid] = $tmp;*/
     $mid = getAdjustPosition($array, $start, $end);
     quick_sort2($array, $start, $mid - 1);
     quick_sort2($array, $mid + 1, $end);
