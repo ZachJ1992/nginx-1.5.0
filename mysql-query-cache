@@ -1,0 +1,82 @@
+1. MySQL Query Cache缓存客户端提交给MySQL的SELECT(注意只是select)语句以及该语句的结果集。
+
+    注意: query_cache是mysql server端的查询缓存， 在存储引擎之上。 存储引擎层还有存储引擎的缓存，表也有表的缓存， 日志也有日志的缓存， 还可以用nosql实现二级三级甚至更多层的缓存...... 缓存是提高性能的尚方宝剑， 因为内存的速度比磁盘的速度要快的多得多， 宁愿在内存中执行1000词也不在磁盘上执行一次， 缓存可以跳过解析和优化的操作从而大幅度提高查询性能。
+
+2. Mysql的Query Cache原理:
+    客户端的select语句通过一定的hash算法进行计算， 存放在hash桶中， 并对结果集存放在内存中，存放query hash值的链表中存放了hash值和结果集的内存地址和query设计的所有table的标识等信息。 前端的sql过来会先进行hash计算， 如果能够在cache中找到， 就直接从内存中取出结果返回给前端， 如果没有则mysql解析器会对sql进行解析并且优化。 注意查询cache是在解析器前执行的， 所以速度非常快， 因为又省去了一个操作。
+
+3. 失效机制:
+    当后端任何一个表的一条数据，索引，结构发生变化时， 就会将与此表关联的query cache失效， 并且释放内存。 所以对于数据变化频繁的sql就不要cache了。 那样不但不会提高性能还能得到相反的结果，因为每次多了查询缓存的操作。
+    这里需要指出的是， 这种失效机制并不科学， 因为有些表的改动并不会导致结果集的改变。 但是这种方法简单， 开销也比较小。
+
+4. 相关参数
+    SHOW VARIABLES LIKE '%query_cache%';
+    1) query_cache_limit : 允许Cache的单条Query结果集的最大容量，默认为1MB，超过此参数设置的Query结果集将不会被Cache。
+    2) query_cache_min_res_unit : 设置Query Cache中每次分配内存的最小空间大小， 也就是每个Query的Cache最小占用的内存空间大小，默认为4KB， 要设置合理， 不然会造成碎片过多， 造成内存的浪费。
+    3) query_cache_size : 设置Query Cache索使用的内存大小， 默认为0， 大小必须是1024的整数倍，如果不是整数倍， MySQL会自动调整降低最小量已达到1024的整数倍数。
+    4) query_cache_type : 控制Query Cache功能的开关， 可以设置为0(OFF), 1(ON), 2(DEMAND)三种，意义如下：
+        0(OFF)    : 关闭Query Cache功能，任何情况下都不使用Query Cache
+        1(ON)     : 开启Query Cache功能，但是当SELECT语句使用的SQL_NO_CACHE提示后，将不使用Query Cache.
+        2(DEMAND) : 开启Query Cache功能，但是只有当SELECT语句使用了SQL_CACHE提示后，才使用Query Cache.
+    5) query_cache_wlock_invalidate : 控制当有写锁定发生在表上的时刻是否失效该表相关的Query Cache,如果设置为1(TRUE), 则在写锁定的同时将失效该表的相关的所有Query Cache， 如果设置为0(FALSE)则在锁定时刻仍然允许读取该表的Query Cache。 默认为false.
+
+5. Query Cache处理子查询:
+    Query Cache是以客户端请求提交的Query为对象来处理的， 只要客户端请求的是一个Query， 无论这个Query是一个简单的单表还是多表JOIN，亦或是带有子查询的复杂SQL， 都被当作一个Query， 不会被分拆成多个Query来进行Cache. 所以， 存在子查询复杂的Query也只会产生一个Cache对象， 子查询不会产生单独的Cache内容。 UNION[ALL]类型的语句也同样如此。
+
+6. Query Cache导致性能反而下降的原因:
+    1) 开启Query Cache并且query_cache_type参数设置为1， 或者是2但是缓存了太多的不必要SQL， 导致MySQL对每个SELECT语句都进行Query Cache查找， 这样就比直接查找多一次查找缓存的操作
+    2) 并且由于Query Cache的失效机制的特性， 比如表上的数据变化比较频繁， 大量的Query Cache频繁的被失效， 所以Query Cache的命中率就可能非常低
+    3) query_cache_min_res_unit设置不合理导致内存碎片太多
+    4) Query Cache缓存的是结果集而不是数据页， 所以由于SQL写的不合理导致同一结果集的SQL被缓存多次， 浪费内存。 字符大小写，空格或者注释的不同， 缓存都是人为是不同的SQL(因为它们的hash值不同).
+    5) 对于InnoDB, 事务会让缓存失效， 当食物内的语句更改了表， 即使InnoDB的多版本机制隐藏了事务的变化， 服务器也会使所有(不管事务内还是外)引用了该表的查询缓存的失效， 知道事务提交， 所以经常使用事务或使缓存的命中率下降。
+
+    所以有些场景下， Query Cache不经不能提高效率， 反而可能造成负面影响。
+    从缓存中受益最大的查询是需要很多资源产生得到的结果， 并且变化不是很频繁的。
+
+7. Query Cache带来的额外开销
+    1) SQL优化器在分析之前必须检查缓存
+    2) 如果查询是可以缓存， 但是不在缓存中，那么产生结果后进行保存会带来额外开销
+    3) 写入数据的查询也会带来额外开销， 因为它必须去检查缓存中是否有相关SQL缓存，如果有的话，需要将它们失效。
+
+8. 确认系统的Query Cache的使用情况， 命中率:
+    SHOW STATUS LIKE 'Qcache%';
+    Qcache_free_blocks       : 目前还处于空闲状态的Query Cache中内存Block数目
+    Qcache_free_memory       : 目前还处于空闲状态的Query Cache内存总量
+    Qcache_hits              : Query Cache命中次数
+    Qcache_inserts           : 向Query Cache中插入新的Query Cache的次数， 也就是没有命中的次数
+    Qcache_lowmem_prunes     : Query Cache因为内存不够， 而从中删除老的Query Cache的次数
+    Qcache_not_cached        : 没有Cache的SQL数， 包括无法被Cache的SQL以及由于query_cache_type设置的不会被Cache的SQL。
+    Qcache_queries_in_cache  : 目前在Query Cache中的SQL数量
+    Qcache_total_blocks      : Query Cache中总的Block数量
+
+    Query Cache命中率 = Qcache_hits / (Qcache_hits + Qcache_inserts)
+    如果从查询缓存中返回一个查询结果， 服务器把Qcache_hits状态变量的值增加1， 而不是Com_select变量。
+
+9. 未命中缓存的情况:
+    1) 查询不可缓存， 比如包含不确定函数， 比如current_date等
+    2) 结果太大， 超过了query_cache_limit的大小
+    3) 由于内存空间不够，被移除了
+
+10. MySQL Cluster和Query Cache:
+    待续
+
+11. 内存与碎片:
+    1. 首先缓存自身大小为40K， 而mysql服务器自己管理自己的内存， 不依赖于操作系统。
+    2. 服务器每次分配一个块至少是query_cache_min_res_unit的大小，但它不能精确的分配， 服务器不是在获得所有结果才返回给客户的， 而是产生一行就发送一行， 因为这样的效率高， 但结果是缓存的结果不精确.
+    3. FLASH QUERY CACHE移除缓存碎片， 它会把所有的存储块向上移动， 把空闲块移动到底部， 但它运行的时候会阻塞访问查询缓存， 锁定整个服务器。该语句不从缓存中移出任何查询。
+
+12. Query Cache的限制:
+    1. 5.1.17之前的版本不能缓存绑定变量的query, 从5.1.17开始支持
+    2. Procedure, function, Trigger, 临时表, 用户有某个表的列级权限的query不能被缓存
+    3. 包含很多每次执行结果都不一样的系统函数不能被缓存，比如: CURRENT_DATE()。 如果想让它缓存，比如缓存今天的，可以把current_date()的实际值赋予它。
+    4. mysql5.1之前的准备语句也不能被缓存(prepared statement)
+    5. mysql, INFORMATION_SCHEMA相关表的查询也不会被缓存.
+
+13. 其他相关:
+    SELECT查询总数量等价于:
+    Com_select + Qcache_hits + 被解析器发现有错误的查询数
+
+    Com_select的值等价于:
+    Qcache_inserts + Qcache_not_cached + 在列/权限检查中发现的查询数
+
+

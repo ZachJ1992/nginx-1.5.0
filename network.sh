@@ -1,4 +1,4 @@
-#!/bin/bash`
+#!/bin/bash
 #
 R1=`cat /sys/class/net/eth0/statistics/rx_bytes`
 T1=`cat /sys/class/net/eth0/statistics/tx_bytes`
