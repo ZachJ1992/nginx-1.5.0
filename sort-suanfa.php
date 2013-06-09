@@ -272,7 +272,8 @@ function quick_sort(&$array, $start, $end)
 {
     if($start < $end)
     {
-        //首先选择一个基准数， 并找到其排序后应该在的位置，这里选择$start对应的元素
+        // 首先选择一个基准数， 并找到其排序后应该在的位置，这里选择$start对应的元素
+        // 如果使用中间数作为基准，简单的将中间数和第一个元素交换下就可以了 list($array[$start], $array[floor(($start+$end)/2)]) = array($array[floor(($start+$end)/2)], $array[$start]);
         $baseElement = $array[$start]; // 基准元素取出后， 这个位置就留下一个坑， 这个为小数坑
         $i = $start;
         $j = $end;
