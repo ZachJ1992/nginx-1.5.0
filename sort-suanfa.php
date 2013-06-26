@@ -1,15 +1,17 @@
 <?php
 $array = array(9, 8, 10, 15, 6, 3, 21, 4, 11);
-quick_sort($array, 0, 8);
+heap_sort($array);
 print_r($array);
 /**
- * 原理
- * 1) 比较相邻的两个元素的大小， 如果前面的元素比后面的元素大， 则狡猾两个元素
+ * 冒泡法排序原理
+ * 1) 比较相邻的两个元素的大小， 如果前面的元素比后面的元素大， 则交换两个元素
  * 2) 对每一对元素做同样的工作， 从开始第一对到结尾最后一对。 在这一点， 最后的元素应该是最大的数
  * 3) 针对所有元素重复以上步骤， 除了第一个元素
  * 4) 持续每次对越来越少的元素重复上面的步骤，直到没有任何一对数字需要比较。
  * 
  * 平均时间复杂度: O(n*n)
+ * 比如， 从小到大排序， 将前面的元素以冒泡的方式移动到最右边。
+ * 相邻元素比较， 如果前面元素比后面元素大， 则交换位置。继续和下一个元素比较
  */
 function bubble_sort($array)
 {
@@ -29,7 +31,65 @@ function bubble_sort($array)
     }
     return $array;
 }
+/** 选择排序
+ * 原理:
+ * 每次循环找到最小(大)元素， 放在给定的位置
+ */
+function select_sort(&$array)
+{
+    $size = count($array);
+    if($size > 1){
+        for($i = 0; $i < $size; $i++)
+        {
+            $index = $i;
+            for($j = $i + 1; $j < $size; $j++)
+            {
+                if($array[$j] < $array[$index])
+                {
+                    $index = $j;
+                }
+            }
+            if($index != $i)
+            {
+                $tmp = $array[$i];
+                $array[$i] = $array[$index];
+                $array[$index] = $tmp;
+            }
+        }
+    }
+    return $array;
+}
 
+/** 插入排序
+ *  原理
+ *  遍历元素， 将元素插入到已排序好的序列中
+ *  假设初始状态，第一个元素是已经排序号的，然后后面的元素会和它们做比较，找到合适的位置，然后插入元素,
+ *   这个位置后面的元素都后移一个位置
+ */
+function insert_sort(&$array)
+{
+    $size = count($array);
+    if($size > 1)
+    {
+        for($i = 1; $i < $size; $i++)
+        {
+            $insertValue = $array[$i];      //待插入元素
+            $insertPos = $i - 1;            //待插入位置
+            // 当待插入位置以及前面元素比待插入元素要大， 需要将它们都后移一个位置，然后再将元素插入。当然，都比待插入元素小，那么无需移动位置
+            while(($insertPos >= 0) && ($array[$insertPos] > $insertValue))
+            {
+                $array[$insertPos + 1] = $array[$insertPos];
+                $insertPos--;
+            }
+
+            // 这里稍微注意下， 待插入位置在上面循环中多递减了一次
+            if(($insertPos + 1) != $i)
+            {// 只有待插入位置和原始位置不同，才将元素插入给定位置
+                $array[$insertPos + 1] = $insertValue;
+            }
+        }
+    }
+}
 /**
  * 分治法排序
  *               array()
