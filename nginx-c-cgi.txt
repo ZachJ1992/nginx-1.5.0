@@ -1,0 +1,61 @@
+使用nginx编写c语言的cgi程序
+1. 安装和配置
+    1) nginx的安装这里省略掉
+    2) spawn-fcgi安装
+        下载最新的spawn-fcgi: wget http://www.lighttpd.net/download/spawn-fcgi-1.6.3.tar.gz
+        解压编译 tar zxvf spawn-fcgi-1.6.3.tar.gz
+        cd spawn-fcgi-1.6.3
+        ./configure
+        make
+        cp ./src/spawn-fcgi /usr/local/nginx/sbin/
+
+    3) 安装fcgi库
+        wget www.fastcgi.com/dist/fcgi.tar.gz
+        tar zxvf fcgi.tar.gz
+        cd fcgi
+        ./configure
+        make && make install
+
+        安装完成后，共享库文件在/usr/local/lib
+2. 编写测试c程序
+    // test.cpp
+    #include <fcgi_stdio.h>
+    int main( int argc, char *argv[] )
+    {
+      while( FCGI_Accept() >= 0 )
+      {
+          FCGI_printf( "Status: 200 OK\r\n" );
+          FCGI_printf( "Content-Type: text/html\r\n\r\n" );
+          FCGI_printf( "Hello world in C\n" );
+      }
+      return 0;
+    }
+
+3. 编译程序
+    g++ -I /usr/local/include/ -o test.cgi test.cpp -L /usr/local/lib/ -lfcgi
+
+4. 启动spawn-fcgi
+    ./spawn-fcgi  -a 127.0.0.1 -p 7000   -n   /home/qiaoguoqiang/public_html/test.hwtrip.com/test.cgi
+    如果启动发生错误，类似于error while loading shared libraries: libfcgi.so.0
+    则检查位于/usr/local/lib中是否存在这个共享库，如果存在，可能是需要运行下ldconfig
+
+5. 配置nginx
+    server {
+        listen       80;
+        server_name  test.xxx.com;
+        location / {
+            root /home/public_html/test.xxx.com;
+            index index.php index.html index.htm;
+            if (!-e $request_filename){
+                rewrite ^/(.*)$ /index.php last;
+            }
+        }
+        location ~ \.cgi$ {
+            root /home/public_html/test.xxx.com;
+            fastcgi_pass 127.0.0.1:7000;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            include fastcgi_params;
+        }
+    }
+    重启nginx
+    访问 test.xxx.com/test.cgi即可看到输出结果
