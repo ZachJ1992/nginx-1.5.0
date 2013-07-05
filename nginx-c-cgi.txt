@@ -59,3 +59,57 @@
     }
     重启nginx
     访问 test.xxx.com/test.cgi即可看到输出结果
+
+
+    应用程序在Web服务器中执行请求使用一个简单的协议。 协议的详情依赖于应用作用， 但大致来说web服务器首先发送参数和其他数据到应用程序，其后应用程序发送结果数据到web服务器，最后应用程序发送给web服务器一个指示表明请求完成。
+    所有通过传输连接的数据流是通过FastCGI的记录来携带的。 FastCGI记录完成两件事情：
+    1) 记录数个独立的FastCGI请求间多个传输连接。这种支持复用的应用可以使用事件驱动或者多线程编程技术来处理并发请求。 
+    2) 记录在单个请求中的每个方向提供多个独立的数据流。 这样的话，例如stdout和stderr数据可以通过单个传输连接从应用程序到web服务器传递，而不需要单独的连接。
+        typedef struct {
+            unsigned char version;
+            unsigned char type;
+            unsigned char requestIdB1;
+            unsigned char requestIdB0;
+            unsigned char contentLengthB1;
+            unsigned char contentLengthB0;
+            unsigned char paddingLength;
+            unsigned char reserved;
+            unsigned char contentData[contentLength];
+            unsigned char paddingData[paddingLength];
+        } FCGI_Record;
+    FastCGI的记录有一个固定长度的前缀后面跟着可变长度的内容和填充字节。 记录有几部分组成:
+        version : 标识FastCGI协议的版本.
+        type : 标识FastCGI记录类型, i.e. 记录执行的一般方法。 特殊记录类型和其他的方法在后面会列出来。
+        requestId: 标识记录所属的FastCGI请求
+        contentLength: 记录中contentData部分的字节数
+        paddingLength: 记录中paddingData部分的字节数
+        contentData: 0~65535字节的数据, 根据记录类型来解析
+        paddingData: 0~255字节的数据, 这些会被忽略掉.
+
+        我们使用了一个轻盈的C结构体初始化语法来指定了常量FastCGI记录。 忽略掉版本部分，忽略掉填充部分并视requestId是数字。
+        因此{FCGI_END_REQUEST, 1, {FCGI_REQUEST_COMPLETE,0}}是一个类型为FCGI_END_REQUEST的记录, requestId为1, contentData是{FCGI_REQUEST_COMPLETE,0}. 
+
+        填充(Padding):
+
+        协议允许发送者将他们发送的记录填充，同时也需要接受者解析填充的长度，以及跳过填充数据。填充允许发送者保持数据的对齐，便于更加有效的处理。
+        X window系统协议经验显示这样的对齐性能很有好处。
+        推荐记录放置在8字节倍数的边界上。 FCGI_Record的固定长度部分是8字节.
+
+        管理请求IDs
+        Web服务器重用FastCGI请求IDs;应用程序在给定的传输连接上跟踪每个请求ID的当前状态。请求ID R在应用程序接收到记录{FCGI_BEGIN_REQUEST, R, ...}变为活动状态，当应用程序发送记录{FCGI_END_REQUEST, R, ...}给web服务器的时候变为非活动状态。
+        当请求ID变为非活动状态，应用程序忽略RequestId为R的记录， 除了刚才介绍的FCGI_BEGIN_REQUEST记录。
+        Web服务器尝试保持FastCGI请求IDs很小。 这样应用程序可以使用一个较短的数组而不用使用长的数组或者hash table来跟踪请求ID的状态。
+        应用程序也有选择在同一时间接受唯一的请求。在这个情况下，应用程序通过当前请求ID来简单检查过来的请求。
+
+        记录类型
+        有两种有用的方式来分类FastCGI记录类型。
+        第一种区别在于管理记录和应用记录。管理记录包含非特定任意web服务器请求的信息，比如关于应用程序的协议能力的信息。应用程序记录包含了关于特定请求的信息，由请求ID部分来标识的。
+
+        管理记录的请求ID值为0， 也叫做null请求ID。 应用程序记录有一个非零的请求ID。
+
+        第二种区别在于离散和流记录。 离散记录自身包含了有用的数据单元。流记录是一个流的一部分， 例如， 一串零或者非空的记录(length!=0), 当长度为0时，后面跟了一个流类型的空记录。 流记录的contentData部分，当连接的时候，形成了一个字节序列； 这个字节序列是流的值。
+        因此流的值是与包含有多少记录或者它的字节在非空记录中是如何划分是无关的。
+
+        这两种分类都是独立的。 在这个版本的FastCGI协议中定义的记录类型， 所有的管理记录类型都是离散记录类型， 几乎所有的应用程序记录类型都是流记录类型。 但是有三种应用记录类型是离散的， 在今后的协议版本中也不会防止定义管理记录类型是流式记录类型。
+
+        
