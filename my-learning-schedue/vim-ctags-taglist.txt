@@ -1,0 +1,6 @@
+http://blog.csdn.net/bokee/article/details/6633193
+
+将Vim改造为强大的IDE—Vim集成Ctags/Taglist/Cscope/Winmanager/NERDTree/OmniCppComplete（有图有真相）
+
+Zend Thread Safety
+http://blog.codinglabs.org/articles/zend-thread-safety.html

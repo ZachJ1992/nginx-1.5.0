@@ -1,0 +1,14 @@
+1. Cache写策略
+http://www.dbaleet.org/cach_write_policy_write-through_and_write-back/
+http://benjr.tw/node/682
+http://witmax.cn/cache-writing-policies.html
+http://en.wikipedia.org/wiki/Cache_%28computing%29#Writing_policies
+
+2. I/O模式
+http://www.cppblog.com/cxiaojia/archive/2013/06/13/198831.html
+http://www.ccvita.com/503.html
+http://www.ibm.com/developerworks/cn/linux/l-async/
+http://www.cnblogs.com/wzd24/archive/2009/03/09/1407326.html
+
+3. linux 网络编程书籍
+http://blog.csdn.net/21aspnet/article/details/6694485

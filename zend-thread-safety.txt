@@ -1,0 +1,168 @@
+Zend Thread Safety(Zend线程安全)
+
+PHP在它起初阶段， 是以单进程CGI运行的， 不需要关心线程安全， 因为没有进程空间能在单个请求之外存活。
+内部变量可以任意的在全局作用域声明、访问或者改变而没有任何后果，只要它的内容是正确的初始化了的。
+任何没有正确清理干净的资源都会在CGI进程终止的时候被释放掉。
+
+后来，PHP被嵌入到多进程web服务器，比如Apache。 给定的内部变量仍然可以被全局性定义和被活动请求安全访问，只要它在每个请求开始被正确的初始化， 然后在结束的时候清理干净。因为每个进程空间都只有一个请求在同一时间处于活动状态。 这点上每个请求的内存管理被增加来保证保持增长失控的资源泄漏。
+
+当单进程多线程web服务器开始出现， 这样，处理全局数据的新方法就迫在眉睫了。
+最终出现了一个新的层叫做TSRM(Thread Safe Resource Management线程安全资源管理).
+
+线程安全和非线程安全的定义
+在简单的非线程应用中，你最有可能通过将变量放在源文件的顶部来声明全局变量。编译器然后会在你程序的数据段分配一块内存来保存那个单元的信息。
+
+在多线程应用中， 每个线程需要自己版本的数据元素， 有必要为每个线程分配单独的内存块。然后给定的线程在需要访问它的数据时候就用那个指针获取正确的内存块。
+
+线程安全数据池(Thread-Safe Data Pools)
+
+在扩展的MINIT阶段， TSRM层会被通知这个扩展将需要存储的数据的数量，使用一次或多次调用ts_allocate_id()函数。 TSRM添加那个字节数到它运行中数据空间所需总数中去， 并返回一个新的，唯一的线程数据池的那个段部分的标识符。
+
+typedef struct {
+    int sampleint;
+    char *samplestring;
+} php_sample_globals;
+int sample_globals_id;
+PHP_MINIT_FUNCTION(sample)
+{
+    ts_allocate_id(&sample_globals_id,
+        sizeof(php_sample_globals),
+        (ts_allocate_ctor) php_sample_globals_ctor,
+        (ts_allocate_dtor) php_sample_globals_dtor);
+    return SUCCESS;
+}
+
+当在请求中需要访问那个数据段时， 扩展请求TSRM层当前线程资源池的指针， 即通过恰当的由ts_allocate_id()返回的资源ID暗示的索引偏移量。
+换句话说， 以代码流的术语， 下面的语句SAMPLE_G(sampleint) = 5; 就是在模块在前面MINIT语句中分配中可以看到的。 在线程安全版本下，这个语句通过一系列的中间宏变为:
+(((php_sample_globals*)(*((void ***)tsrm_ls))[sample_globals_id-1])->sampleint = 5;
+
+如果你解析这个语句遇到麻烦就不要关心它； 这个是集成到PHPAPI中的， 一些开发者根本不会担心它们如何工作的。
+
+当不是对于线程的情况
+因为在线程安全版本访问全局资源牵涉查找到线程池正确的偏移量的开销，这样就会比非线程的相应会慢些， 在非线程安全情况下， 数据简直是从真正的全局中抠出来， 因为它们在编译阶段地址都固定下来了。
+
+在考虑上面的例子， 下面是在非线程版本:
+
+typedef struct {
+    int sampleint;
+    char *samplestring;
+} php_sample_globals;
+php_sample_globals sample_globals;
+PHP_MINIT_FUNCTION(sample)
+{
+    php_sample_globals_ctor(&sample_globals TSRMLS_CC);
+    return SUCCESS;
+}
+这里首先注意的是这里没有申明一个整型来标志对全局结构体声明的引用， 而这里简单的在进程的全局作用域定义了一个结构体。 这就意味着前面的SAMPLE_G(sampleint) = 5; 语句在这里只需要扩展为简单的语句sample_globals.sampleint = 5;。简单、快捷、有效。
+
+非线程builds也有进程孤立的优势， 因此如果给定请求遇到无法预料的情况， 它仍然能保证即使出现段错误，也不至于造成整个web服务器的瘫痪。事实上， Apache的MaxRequestsPerChild指令就是设计于这个效果的优势， 每隔一段时间故意杀掉所有子孩子，并原地产生一些新的孩子。
+
+不可知的全局访问(Agnostic Globals Access)
+当创建一个扩展， 你可能不知道获取环境是否使用线程安全。 幸运的是，包含文件的标准集的一部分，会使用条件定义ZTS预处理token。
+当PHP是构建为线程安全的， 或者因为SAPI需要它，或者通过enable-maintainer-zts选项， 这个值被自动定义， 并可以使用常用指令集比如#ifdef ZTS来检测。
+
+正如你前面看到的， 只有在线程池存在的情况下在线程安全池中分配空间才有意义， 并且只能在PHP被编译为线程安全的时候才存在。 这就是为什么前面的例子被检查ZTS来包围着， 对于非线程安全builds非线程安全替换版本被调用。
+
+在本章前面你看到的PHP_MINIT_FUNCTION(myextension)例子中, #ifdef ZTS被用于条件性调用正确版本的全局初始化代码。 对于ZTS模式使用ts_allocate_id()来产生myextension_globals_id变量， 非ZTS模式仅仅为myextension_globals直接调用初始化方法。这两个变量变量将在你的扩展源代码前面使用Zend宏来声明。DECLARE_MODULE_GLOBALS (myextension); 
+它会自动处理检测ZTS和声明依赖于ZTS是否启用的正确的主变量。
+
+当访问这些全局变量的时候，你会使用一个自定义宏，就像SAMPLE_G()一样。
+
+In Chapter 12, you'll learn how to design this macro to expand to the correct form depending on whether ZTS is enabled.
+Threading Even When You Don't Have To
+
+A normal PHP build has thread safety turned off by default and only enables it if the SAPI being built is known to require thread safety, or if thread safety is explicitly turned on by a ./configure switch.
+
+Given the speed issues with global lookups and the lack of process isolation you might wonder why anyone would deliberately turn the TSRM layer on when it's not required. For the most part, it's extension and SAPI developerslike you're about to becomewho turn thread safety on in order to ensure that new code will run correctly in all environments.
+
+When thread safety is enabled, a special pointer, called tsrm_ls , is added to the prototype of many internal functions. It's this pointer that allows PHP to differentiate the data associated with one thread from another. You may recall seeing it used with the SAMPLE_G() macro under ZTS mode earlier in this chapter. Without it, an executing function wouldn't know whose symbol table to look up and set a particular value in; it wouldn't even know which script was being executed, and the engine would be completely unable to track its internal registers. This one pointer keeps one thread handling page request from running right over the top of another.
+
+The way this pointer parameter is optionally included in prototypes is through a set of defines. When ZTS is disabled, these defines all evaluate to blank; when it's turned on, however, they look like the following:
+
+#define TSRMLS_D     void ***tsrm_ls
+#define TSRMLS_DC     , void ***tsrm_ls
+#define TSRMLS_C     tsrm_ls
+#define TSRMLS_CC     , tsrm_ls
+
+
+A non-ZTS build would see the first line in the following code as having two parameters, an int and a char* . Under a ZTS build, on the other hand, the prototype contains three parameters: an int , a char* , and a void*** . When your program calls this function, it will need to pass in that parameter, but only for ZTS-enabled builds. The second line in the following code shows how the CC macro accomplishes exactly that.
+
+int php_myext_action(int action_id, char *message TSRMLS_DC);
+php_myext_action(42, "The meaning of life" TSRMLS_CC);
+
+
+By including this special variable in the function call, php_myext_action will be able to use the value of tsrm_ls together with the MYEXT_G() macro to access its thread-specific global data. On a non-ZTS build, tsrm_ls will be unavailable, but that's okay because MYEXT_G() , and other similar macros, will have no use for it.
+
+Now imagine that you're working on a new extension and you've got the following function that works beautifully under your local build using the CLI SAPI, and even when you compile it using the apxs SAPI for Apache 1:
+
+static int php_myext_isset(char *varname, int varname_len)
+{
+    zval **dummy;
+
+
+    if (zend_hash_find(EG(active_symbol_table),
+        varname, varname_len + 1,
+        (void**)&dummy) == SUCCESS) {
+        /* Variable exists */
+        return 1;
+    } else {
+        /* Undefined variable */
+        return 0;
+    }
+}
+
+
+Satisfied that everything is working well, you package up your extension and send it to another office to be built and run on the production servers. To your dismay, the remote office reports that the extension failed to compile.
+
+It turns out that they're using Apache 2.0 in threaded mode so their build of PHP has ZTS enabled. When the compiler encountered your use of the EG() macro, it tried to find tsrm_ls in the local scope and couldn't because you never declared it and never passed it to your function.
+
+The fix is simple of course; just add TSRMLS_DC to the declaration of php_myext_isset() and toss a TSRMLS_CC onto every line that calls it. Unfortunately, the production team in the remote office is a little less certain of your extension's quality now and would like to put off the rollout for another couple of weeks. If only this problem could have been caught sooner!
+
+That's where enable-maintainer-zts comes in. By adding this one line to your ./configure statement when building PHP, your build will automatically include ZTS even if your current SAPI, such as CLI, doesn't require it. Enabling this switch, you can avoid this common and unnecessary programming mistake.
+
+Note
+
+In PHP4, the enable-maintainer-zts flag was known as enable-experimental-zts ; be sure to use the correct flag for your version of PHP.
+
+
+Finding a Lost tsrm_ls
+
+Occasionally, it's just not possible to pass the tsrm_ls pointer into a function that needs it. Usually this is because your extension is interfacing with a library that uses callbacks and doesn't provide room for an abstract pointer to be returned. Consider the following piece of code:
+
+void php_myext_event_callback(int eventtype, char *message)
+{
+    zval *event;
+
+
+    /* $event = array('event'=>$eventtype,
+                    'message'=>$message) */
+    MAKE_STD_ZVAL(event);
+    array_init(event);
+    add_assoc_long(event, "type", eventtype);
+    add_assoc_string(event, "message", message, 1);
+
+
+    /* $eventlog[] = $event; */
+    add_next_index_zval(EXT_G(eventlog), event);
+}
+PHP_FUNCTION(myext_startloop)
+{
+    /* The eventlib_loopme() function,
+     * exported by an external library,
+     * waits for an event to happen,
+     * then dispatches it to the
+     * callback handler specified.
+     */
+    eventlib_loopme(php_myext_event_callback);
+}
+
+
+Although not all of this code segment will make sense yet, you will notice right away that the callback function uses the EXT_G() macro, which is known to need the tsrm_ls pointer under threaded builds. Changing the function prototype will do no good because the external library has no notion of PHP's thread-safety model, nor should it. So how can tsrm_ls be recovered in such a way that it can be used?
+
+The solution comes in the form of a Zend macro called TSRMLS_FETCH() . When placed at the top of a code segment, this macro will perform a lookup based on the current threading context, and declare a local copy of the tsrm_ls pointer.
+
+Although it will be tempting to use this macro everywhere and not bother with passing tsrm_ls via function calls, it's important to note that a TSRMLS_FETCH() call takes a fair amount of processing time to complete. Not noticeable on a single iteration certainly , but as your thread count increases , and the number of instances in which you call TSRMLS_FETCH() grows, your extension will gradually begin to show this bottleneck for what it is. Be sure to use it sparingly.
+
+Note
+
+To ensure compatibility with C++ compilers, be sure to place TSRMLS_FETCH() and all variable declarations for that matterat the top of a given block scope before any statements. Because the TSRMLS_FETCH() macro itself can resolve in a couple of different ways, it's best to make this the last variable declared within a given declaration header. 

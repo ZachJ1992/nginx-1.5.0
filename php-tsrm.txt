@@ -1,0 +1,125 @@
+PHP Thread Safety Resource Management
+
+
+全局变量(以下均为静态变量)
+1) tsrm_tls_table : 静态的全局变量，线程安全的线程list表。所有线程都会共享这个全局变量。
+2) tsrm_tls_table_size : 也是一个全局静态变量， 是线程列表的尺寸。
+2) tsrm_tls_table_size : 也是一个全局静态变量， 是线程列表的尺寸。
+3) id_count : 全局静态int类型的计数器
+4) resource_types_table : 资源类型表
+5) resource_types_table_size : 资源类型表的尺寸
+6) tsmm_mutex : 静态全局线程安全互斥量 
+7) tsrm_new_thread_begin_handler : 新线程开始的处理器
+8) tsrm_new_thread_end_handler : 新线程结束时候的处理器
+9) tsrm_error_level : 线程安全资源管理的错误级别
+10) tsrm_error_file : 线程安全资源管理的错误记录文件 
+11) tls_key : 线程list的键名
+
+
+数据结构:
+1) typedef struct _tsrm_tls_entry tsrm_tls_entry;
+struct _tsrm_tls_entry {
+    void **storage;
+    int count;
+    THREAD_T thread_id;
+    tsrm_tls_entry *next;
+}
+该结构体负责给定线程的所有全局变量。 该实体有一个属性是线程ID, thread_id，表示对应的线程的ID值。
+所有与该线程相关的全局变量都是存储在数组storage中。这个数组中的元素可以是任何类型的。
+
+所有的线程相关的实体形成一个链表， 每个实体中都有一个指向下一个实体的指针。
+最后将该链表的头指针赋值给tsrm_tls_table。
+这个tsrm_tls_table是个货真价实的全局静态变量， 所有的线程都共享这个全局变量， 所有线程的全局变量都通过这个全局变量统一管理。
+
+2) tsrm_resource_type结构体
+除了上面的线程全局变量管理实体外， 还有一个就是线程安全的资源类型管理结构体
+tsrm_tls_entry是以线程为单位的，每个线程都有会产生一个全局变量实体。而下面的结构体是以资源为单位的，每创建一个资源就会生成一个资源类型。
+typedef struct {
+    size_t size;
+    ts_allocate_ctor ctor;
+    ts_allocate_dtor dtor;
+    int done;
+} tsrm_resource_type;
+所有的tsrm_resource_type是以数组(线性表)的方式组成resource_types_table， 它们的下标就是这个资源的ID。每个资源类型都存储了相应资源的大小，构建方法以及析构方法。
+在某种程度上，也可以将resource_types_table看成是hash table,键值就是资源ID。
+
+
+函数及方法:
+1) tsrm_startup() : 启动线程安全资源管理(每个进程中只调用一次)
+TSRM_API int tsrm_startup(int expected_threads, int expected_resources, int debug_level, char *debug_filename)
+参数:
+    expected_threads : 期望的线程数量
+    expected_resources : 期望的资源数量
+    debug_level : 调试级别
+    debug_filename : 调试文件
+功能描述:
+    主要功能就是通过给定的参数初始化全局静态变量，比如tsrm_tls_table, resource_types_table等变量。
+    tls_key = (:?)
+    tsrm_error_file               = stderr
+    tsrm_tls_table_size           = expected_threads
+    resource_types_table_size     = expected_resources
+    tsrm_tls_table                = (tsrm_tls_entry **) calloc(tsrm_tls_table_size, sizeof(tsrm_tls_entry *)) 
+    resource_types_table          = (tsrm_resource_type *) calloc(resource_types_table_size, sizeof(tsrm_resource_type))
+    tsmm_mutex                    = tsrm_mutex_alloc()
+    tsrm_new_thread_begin_handler = NULL
+    tsrm_new_thread_end_handler   = NULL
+
+    下面看看sapi目录下面的模块是如何调用这个方法的:
+
+    grep -R 'tsrm_startup' *
+    aolserver/aolserver.c:  tsrm_startup(1, 1, 0, NULL);
+    apache/mod_php5.c:              tsrm_startup(1, 1, 0, NULL);
+    apache/mod_php5.c:              tsrm_startup(1, 1, 0, NULL);
+    apache2filter/sapi_apache2.c:   tsrm_startup(1, 1, 0, NULL);
+    apache2handler/sapi_apache2.c:  tsrm_startup(1, 1, 0, NULL);
+    apache_hooks/mod_php5.c:                tsrm_startup(1, 1, 0, NULL);
+    apache_hooks/mod_php5.c:                tsrm_startup(1, 1, 0, NULL);
+    caudium/caudium.c:    tsrm_startup(1, 1, 0, NULL);
+    cgi/cgi_main.c: tsrm_startup(1, 1, 0, NULL);
+    cli/php_cli.c:  tsrm_startup(1, 1, 0, NULL);
+    continuity/capi.c:   tsrm_startup(128, 1, 0, NULL);
+    embed/php_embed.c:  tsrm_startup(1, 1, 0, NULL);
+    fpm/fpm/fpm_main.c:     tsrm_startup(1, 1, 0, NULL);
+    isapi/php5isapi.c:                      tsrm_startup(128, 1, TSRM_ERROR_LEVEL_CORE, "TSRM.log");
+    isapi/php5isapi.c:                      tsrm_startup(128, 1, TSRM_ERROR_LEVEL_CORE, "C:\\TSRM.log");
+    litespeed/lsapi_main.c:    tsrm_startup(1, 1, 0, NULL);
+    milter/php_milter.c:    tsrm_startup(1, 1, 0, NULL);
+    nsapi/nsapi.c:  tsrm_startup(threads, 1, 0, NULL);
+    phttpd/phttpd.c:        tsrm_startup(1, 1, 0, NULL);
+    pi3web/pi3web_sapi.c:   tsrm_startup(1, 1, 0, NULL);
+    roxen/roxen.c:    tsrm_startup(1, 1, 0, NULL);
+    thttpd/thttpd.c:        tsrm_startup(1, 1, 0, NULL);
+
+    可以看到比较常用的sapi如mod_php5、php-fpm和cgi都是预分配一个线程和一个资源，这样是因为不愿浪费内存空间，而且多数情况下PHP还是运行于单线程环境。
+
+2) tsrm_shutdown() : 线程结束时调用
+TSRM_API void tsrm_shutdown(void)
+   这个方法和上面的tsrm_startup刚好相反， 在线程结束时， 需要释放全局静态变量，在释放资源类型前需要调用附加在这个资源类型上面的析构方法.
+
+
+3) ts_allocate_id()
+TSRM_API ts_rsrc_id ts_allocate_id(ts_rsrc_id *rsrc_id, size_t size, ts_allocate_ctor ctor, ts_allocate_dtor dtor)
+参数: 
+    rsrc_id : 全局线程安全资源ID
+    size    : 资源大小
+    ctor    : 构造方法
+    dtor    : 析构方法
+功能描述:
+    用于在多线程环境下申请一个全局变量并返回资源ID
+    
+    在sapi目录下面该方法的调用情况:
+    php-5.4.15/sapi> grep -R 'ts_allocate_id' *
+    aolserver/aolserver.c:  ts_allocate_id(&ns_globals_id, sizeof(ns_globals_struct), NULL, NULL);
+    apache/php_apache.c:    ts_allocate_id(&php_apache_info_id, sizeof(php_apache_info_struct), (ts_allocate_ctor) php_apache_globals_ctor, NULL);
+    apache2handler/php_functions.c: ts_allocate_id(&php_apache2_info_id, sizeof(php_apache2_info_struct), (ts_allocate_ctor) NULL, NULL);
+    apache_hooks/php_apache.c:      ts_allocate_id(&php_apache_info_id, sizeof(php_apache_info_struct), (ts_allocate_ctor) php_apache_globals_ctor, NULL);
+    caudium/caudium.c:    ts_allocate_id(&caudium_globals_id, sizeof(php_caudium_request), NULL, NULL);
+    cgi/cgi_main.c: ts_allocate_id(&php_cgi_globals_id, sizeof(php_cgi_globals_struct), (ts_allocate_ctor) php_cgi_globals_ctor, NULL);
+    fpm/fpm/fpm_main.c:     ts_allocate_id(&php_cgi_globals_id, sizeof(php_cgi_globals_struct), (ts_allocate_ctor) php_cgi_globals_ctor, NULL);
+    phttpd/phttpd.c:        ts_allocate_id(&ph_globals_id, sizeof(phttpd_globals_struct), NULL, NULL);
+    roxen/roxen.c:    ts_allocate_id(&roxen_globals_id, sizeof(php_roxen_request), NULL, NULL);
+    thttpd/thttpd.c:        ts_allocate_id(&thttpd_globals_id, sizeof(php_thttpd_globals), NULL, NULL);
+    每个相应的sapi都对应一个全局的变量
+
+
+
