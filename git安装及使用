@@ -39,6 +39,7 @@
 10. 本地和远程合并，本地默认分支为master
    # git push origin master
    # git push git@github.com:joescott82/nginx-1.5.0.git master --force
+     git push git@github.com:joescott82/php5.4.git master --force
 其他详细命令介绍：
 
 1.   git init 或者 git init-db
