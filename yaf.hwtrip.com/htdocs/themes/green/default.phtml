@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title><?php echo $this->layout['meta_title'];?> -- Green Theme</title>
+        <link rel="stylesheet" type="text/css" href="<?php echo Rewrite::css('public.css');?>" />
+<?php 
+    if(sizeof($this->css)){
+        foreach($this->css as $css)
+        {
+?>
+        <link rel="stylesheet" type="text/css" href="<?php echo Rewrite::css($css['link']);?>" />
+<?php
+        }
+    }
+?>
+    </head>
+    <body>
+<?php echo $this->content . PHP_EOL;?>
+<?php 
+    if(sizeof($this->js)){
+        foreach($this->js as $js)
+        {
+?>
+<script type="text/javascript" src="<?php echo Rewrite::js($js['src']);?>"></script>
+<?php
+        }
+    }
+?>
+    </body>
+</html>

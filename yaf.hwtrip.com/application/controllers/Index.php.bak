@@ -1,0 +1,49 @@
+<?php
+/**
+ * @name IndexController
+ * @author qiaoguoqiang
+ * @desc 默认控制器
+ * @see http://www.php.net/manual/en/class.yaf-controller-abstract.php
+ */
+class IndexController extends Yaf_Controller_Abstract {
+    private $_layout;
+
+    public function init(){
+        $this->_layout = Yaf_Registry::get('layout');
+    }
+    /** 
+     * 默认动作
+     * Yaf支持直接把Yaf_Request_Abstract::getParam()得到的同名参数作为Action的形参
+     * 对于如下的例子, 当访问http://yourhost/YafDemo/index/index/index/name/qiaoguoqiang 的时候, 你就会发现不同
+     */
+    public function indexAction($name = "Stranger") {
+        //1. fetch query
+        //$get = $this->getRequest()->getQuery("get", "default value"); from ?acc=axx
+
+        //2. fetch model
+        //$model = new SampleModel();
+
+        //3. assign
+        //$this->getView()->assign("content", $model->selectSample());
+        $this->getView()->assign('destinationNavs', DestinationModel::getDestSideMenus());   // 左侧目的地导航数据
+        $this->getView()->assign('banners', BannerModel::getBanners(0));                     // 首页主banner数据
+        $this->getView()->assign('centerBanners', BannerModel::getBanners(100));             // 首页中间长条banner数据
+        $this->getView()->assign('news', ArticleModel::getNews());                           // 爱旅动态数据
+
+        $this->getView()->assign('homeRecommend', ProductModel::getRecommend(Yaf_Registry::get('location')));
+        $this->getView()->_controller = $this;  //Assign the controller to the view, if you want to, something like this in your action
+        //$this->_layout->meta_title = 'A Blog'; // 设置该页的meta title
+        $this->_layout->addCSS(
+            array(
+                array('link' => 'index/index3.css'),
+            )
+        );
+        $this->_layout->addJS(
+            array(
+                array('src' => 'index/index.js'),
+            )
+        );
+        //4. render by Yaf, 如果这里返回FALSE, Yaf将不会调用自动视图引擎Render模板
+        return TRUE;
+    }
+}

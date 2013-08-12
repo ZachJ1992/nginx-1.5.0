@@ -1,0 +1,201 @@
+        <div class="clearfix">
+        <!-- 目的地 start -->
+        <div class="whither">
+            <h2>目的地</h2>
+<?php if(sizeof($destinationNavs)) :?>
+            <ul class="clearfix">
+<?php foreach($destinationNavs as $key => $destNav) :?>
+                <li <?php if(empty($destNav['SHOWBOX'])) :?>name="no"<?php endif;?> <?php if($key == count($destinationNavs)-1) :?>class="last"<?php endif;?>>
+                    <div class="arealks">
+                        <div class="tith3"><h3><?php echo isset($destNav['ICON'])?$destNav['ICON']:'';?><em><?php echo isset($destNav['NAME'])?$destNav['NAME']:'';?></em></h3></div>
+                        <div class="alinks">
+                            <p>
+<?php if(isset($destNav['DATA'])) :?>
+<?php foreach($destNav['DATA'] as $cityKey => $cityValue) :?>
+                                <a href="<?php echo '/city/' . $cityValue['CITY_CODE']; ?>" target="_blank" <?php if(isset($line) && $line == $cityValue['CITY_CODE']) :?>class="curr"<?php endif;?> ><?php echo $cityValue['CITY_NAME'];?></a>
+<?php endforeach;?>
+<?php endif;?>
+                            </p>
+                        </div>
+                    </div>
+<?php if(isset($destNav['SHOWBOX']) && !empty($destNav['SHOWBOX'])) :?>
+                    <div class="morewhither" style="width:400px; top:-30px; display:none;">
+                        <div class="morebox">
+                            <p>
+<?php foreach($destNav['SHOWBOX'] as $cityKey => $cityValue) :?>
+                                <a href="<?php echo '/city/' . $cityValue['CITY_CODE']; ?>" target="_blank" <?php if(isset($line) && $line == $cityValue['CITY_CODE']) :?>class="curr"<?php endif;?> ><?php echo $cityValue['CITY_NAME'];?></a>
+<?php endforeach;?>
+                            </p>
+                        </div>
+                    </div>
+<?php endif;?>
+                </li>
+<?php endforeach;?>
+            </ul>
+<?php endif;?>
+        </div>
+        <!-- 目的地 end -->
+        
+        <!-- 焦点图 start -->
+<?php if(sizeof($banners)) :?>
+        <div class="sliderbox">
+            <ul class="slides_container" id="slides_container">
+<?php foreach($banners as $banner) :?>
+                <li><a href="#" title="<?php echo $banner['TITLE'];?>"><img src="<?php echo $banner['FOCUS_IMAGE'];?>" alt="<?php echo $banner['TITLE'];?>" title="<?php echo $banner['TITLE'];?>" /></a></li>
+<?php endforeach;?>
+            </ul>
+            <div class="nums">
+                <ul class="pagination jds" id="slicer-cur">
+<?php for($i = 1; $i <= sizeof($banners); $i++) :?>
+                    <li><a href="#"><?php echo $i;?></a></li>
+<?php endfor;?>
+                </ul>
+            </div>
+        </div>
+<?php endif;?>
+        <!-- 焦点图 end -->
+        </div>
+        
+        
+        <!-- 品鉴之旅 start -->
+<?php if(isset($homeRecommend['品鉴之旅推荐'])) :?>
+        <div class="grade">
+            <div class="tith2">
+                <h2>品鉴之旅 </h2>
+                <p class="p1">新锐精品旅行，坚持设计自己也想参加的行程</p>
+                <p class="more"><a href="<!--{HWTRIP_Rewrite::tasteTravel()}-->" target="_blank">更多>></a></p>
+            </div>
+            <div class="gradeinnr">
+            <ul class="clearfix">
+<?php foreach($homeRecommend['品鉴之旅推荐'] as $key => $value) :?>
+<?php if($key < 3) :?>
+                <li>
+                    <div class="pic">
+                        <a href="/trip/<?php echo $value['TRIP_ID'];?>" target="_blank" title="<?php echo $value['PRODUCT_NAME'];?>">
+                            <span class="fp"><img src="/<?php echo $value['RECOMMEND_IMAGE'];?>" alt="<?php echo $value['PRODUCT_NAME'];?>" /></span>
+                            <span class="ftx"><span class="vtx"><?php echo $value['PRODUCT_ALIAS'] ? $value['PRODUCT_ALIAS'] : $value['PRODUCT_ALIAS'];?></span><span class="ahp"></span></span>
+                        </a>
+                    </div>
+                    <div class="txinfo"><span class="s1">&yen;<?php echo $value['PRODUCT_ALIAS'];?></span><span class="s2"><span class="ico-gz"></span><em><?php echo $value['VIEWCNT'];?>人关注</em></span></div>
+                </li>
+<?php endif;?>
+<?php endforeach;?>
+            </ul>
+            </div><!-- gradeinnr end -->
+        </div>
+<?php endif;?>
+        <!-- 品鉴之旅 end -->
+
+        <!-- 精品游 start -->
+<?php if(isset($homeRecommend['精品出境游推荐'])) :?>
+        <div class="competitive">
+            <div class="tith2">
+                <h2>精品出境游</h2>
+                <p class="p1">从数百条线路中精心挑选的品质旅游</p>
+                <p class="more">
+<?php foreach($homeRecommend['精品出境游推荐']['area_sort'] as $key => $value) :?>
+                    <a href="#" rel="tag-<?php echo $key;?>" <?php if($key == 0) :?> class="curr"<?php endif;?>><?php echo ProductModel::$sonType[$value]?></a>
+<?php endforeach;?>
+                </p>
+            </div>
+<?php foreach($homeRecommend['精品出境游推荐']['content'] as $key => $value) :?>
+            <div class="listctv" id="tag-<?php echo $key;?>" <?php if($key != 0):?> style="display:none;"<?php endif;?>>
+                <ul class="clearfix">
+<?php foreach($value as $k => $v) :?>
+                    <li>
+                        <div class="pic">
+                            <a href="/trip/<?php echo $v['TRIP_ID'];?>" target="_blank" title="<?php echo $v['PRODUCT_NAME'];?>">
+                                <img src="/<?php echo $v['RECOMMEND_IMAGE'];?>" class="fp" alt="<?php echo $v['PRODUCT_NAME'];?>" />
+                                <span class="ftx"><?php echo HWAL_String::mbSubstr($v['PRODUCT_NAME'], 0, 38, '');?></span>
+                            </a>
+                        </div>
+                        <div class="txinfo"><span class="s1">&yen;<?php echo $v['BASE_PRICE'];?></span><span class="s2"><span class="ico-gz"></span><em><?php echo $v['VIEWCNT'];?>人关注</em></span></div>
+                    </li>
+<?php endforeach;?>
+                </ul>
+            </div>
+<?php endforeach;?>
+        </div>
+<?php endif;?>
+        <!-- 精品游 end -->
+
+<?php if(sizeof($centerBanners)) :?>
+        <div class="banner">
+            <ul class="jds slides_container" style="height:150px;">
+<?php foreach($centerBanners as $focus) :?>
+                <li><a href="<?php echo $focus['FOCUS_URL'];?>" title="<?php echo $focus['TITLE'];?>" target="_blank"><img src="<?php echo $focus['FOCUS_IMAGE'];?>" alt="<?php echo $focus['TITLE'];?>" title="<?php echo $focus['TITLE'];?>" /></a></li>
+<?php endforeach;?>
+            </ul>
+            <div class="nums">
+                <ul class="pagination">
+<?php for($i = 1; $i <= sizeof($centerBanners); $i++) :?>
+                    <li><a href="#"><?php echo $i;?></a></li>
+<?php endfor;?>
+                </ul>
+            </div>
+        </div>
+<?php endif;?>
+        <!-- 门票排行 start -->
+<?php if(isset($homeRecommend['门票'])) :?>
+        <div class="ticketbox">
+            <div class="tith2">
+                <h2>门票排行榜</h2>
+                <p class="p1">每周热卖门票及新品门票推荐</p>
+                <p class="more"><a href="scienc.html" target="_blank">更多>></a></p>
+            </div>
+            <div class="tkpic">
+                <ul class="picls clearfix">
+<?php foreach($homeRecommend['门票'] as $key => $value) :?>
+<?php if($key < 4) :?>
+                    <li><a href="/trip/<?php echo $value['TRIP_ID'];?>" target="_blank"><img src="/<?php echo $value['RECOMMEND_IMAGE'];?>" alt="<?php echo $value['PRODUCT_NAME'];?>" /></a></li>
+<?php endif;?>
+<?php endforeach;?>
+                </ul>
+                <ul class="lstx clearfix">
+<?php foreach($homeRecommend['门票'] as $key => $value) :?>
+                    <li>
+                        <p class="p1"><span class="ico-lsnum"><?php echo $key+1;?></span><a href="/trip/<?php echo $value['TRIP_ID'];?>" target="_blank"><?php echo $value['PRODUCT_NAME'];?></a></p>
+                        <p class="p2"><span class="s1">原价<del>&yen;<?php echo isset($value['COST_PRICE']) ? $value['COST_PRICE'] : '';?></del></span><span class="s2">&yen;<?php echo $value['BASE_PRICE'];?></span></p>
+                    </li>
+<?php endforeach;?>
+                </ul>
+            </div>
+        </div>
+<?php endif;?>
+        <!-- 门票排行 end -->
+
+        <!-- 其他 start -->
+        <div class="other clearfix">
+            <div class="col">
+                <div class="tith4"><h4>爱旅优势</h4></div>
+                <ul class="motto">
+                    <li><span class="ico-dontworry"></span>放心 供应商通过爱旅认证！</li>
+                    <li><span class="ico-safety"></span>安全 保证您的交易安全！</li>
+                    <li><span class="ico-savetime"></span>省时 爱旅精选高性价比产品！</li>
+                    <li><span class="ico-saveworry"></span>省心 爱旅专属投诉渠道！</li>
+                </ul>
+            </div>
+            <div class="col">
+                <div class="tith4"><h4>爱旅动态</h4></div>
+<?php if(sizeof($news)) :?>
+                <ul class="news">
+<?php foreach($news as $key => $value) :?>
+                    <li><a target="_blank"  href="<?php echo $value['TYPECODE'];?>"><?php echo $value['TITLE'];?></a></li>
+<?php endforeach;?>
+                </ul>
+<?php endif;?>
+            </div>
+            <div class="col">
+                <div class="tith4"><h4>关于我们</h4></div>
+                <ul class="wx">
+                    <li><span class="ico-weixin"></span><strong>爱旅微信</strong></li>
+                    <li>让旅行更简单</li>
+                    <li>微信号：hwtrip</li>
+                </ul>
+                <ul class="wb">
+                    <li><span class="ico-weibo"></span><strong>爱旅微博</strong></li>
+                    <li>微博号：<a href="#" class="blue">慧通爱旅</a></li>
+                </ul>
+            </div>
+        </div>
+        <!-- 其他 end -->

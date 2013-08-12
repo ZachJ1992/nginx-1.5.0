@@ -1,0 +1,141 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title><?php echo $this->layout['meta_title'];?></title>
+<meta name="author" content="xiongmg" />
+<meta name="keywords" content="<?php echo $this->layout['meta_keywords'];?>" />
+<meta name="description" content="<?php echo $this->layout['meta_description'];?>" />
+<link rel="stylesheet" type="text/css" href="<?php echo HWAL_Rewrite::css('public.css');?>" />
+<?php 
+    if(sizeof($this->css)){
+        foreach($this->css as $css)
+        {
+?>
+<link rel="stylesheet" type="text/css" href="<?php echo HWAL_Rewrite::css($css['link']);?>" />
+<?php
+        }
+    }
+?>
+<?php 
+    if(isset($this->layout['innerCSS'])){
+?>
+<style type="text/css">
+<?php echo $this->layout['innerCSS'] . PHP_EOL;?>
+</style>
+<?php
+    }
+?>
+</head>
+<body>
+<div class="wraper">
+<?php if(!$onlybodyhtml) : ?>
+    <div class="header">
+        <div class="headerinnr">
+            <h1><a href="<?php echo HWAL_Rewrite::url('index', 'index');?>">爱旅</a></h1>
+<?php if(sizeof($locations)) :?>
+            <div class="city">
+                <p class="p1"><?php echo $this->layout['locationData']['CITY_NAME'];?></p>
+                <div class="cityselt">
+                    <p class="ct1"><a href="#">[切换城市]</a></p>
+                    <div class="city-list" style=" width:160px; display:none;">
+                        <p>
+<?php foreach ($locations as $city) :?>
+<?php if($city['CODE'] != $this->layout['locationData']['CODE']) :?>
+                            <a href="/city/<?php echo $city['CODE'];?>"><?php echo $city['CITY_NAME'];?></a>
+<?php endif;?>
+<?php endforeach;?>
+                            <a href="#">北京</a><a href="#">北京</a><a href="#">北京</a><a href="#">北京</a><a href="#">北京</a><a href="#">北京</a></p>
+                        <span class="ico-arwt"></span>
+                    </div><!-- citylist end -->
+                </div><!-- cityselt end -->
+            </div>
+<?php endif;?>
+            <div class="search">
+                <input type="text" class="inptext" value="请输入目的地或者线路名称" />
+                <input type="submit" class="inpsubmit" value="" />
+            </div><!-- search end -->
+            <div class="logininfo">
+                <p>
+                <span class="logtx"><a href="#">我的爱旅</a>&nbsp;|&nbsp;<a href="#">退出</a></span>
+                <span  class="logtx none"><a href="#">注册</a><span>&nbsp;|&nbsp;</span><a href="#">登录</a></span>
+                <span class="sertime">服务时间:周一～周五（9点～18点）</span>
+                </p>
+                <p class="p1">服务热线：<strong class="tel">0755-2856999</strong></p>
+            </div>            
+        </div><!-- headerinnr end -->
+        <div class="nav">
+            <div class="navinnr">
+<?php if(sizeof($mainNavs['bigLeft'])) :?>
+                <ul class="mainnav">
+<?php foreach ($mainNavs['bigLeft'] as $bmenu) :?>
+                    <li class="<?php echo $bmenu['CHANNEL_STYLE'] . ' ';if($bmenu['ISACTIVE']) :?> curr<?php endif;?>"><a href="<?php echo $bmenu['CHANNEL_URL'];?>"><?php echo $bmenu['CHANNEL_NAME'];?></a>
+                    <?php if($bmenu['CHANNEL_TIPS']) :?><?php echo htmlspecialchars_decode($bmenu['CHANNEL_TIPS']);?><?php endif;?>
+                    </li>
+<?php endforeach;?>
+                </ul>
+<?php endif;?>
+<?php if(sizeof($mainNavs['smallRight'])) :?>
+                <ul class="sidenav">
+<?php foreach ($mainNavs['smallRight'] as $smenu) :?>
+                    <li class="<?php echo $smenu['CHANNEL_STYLE'] . ' ';if($smenu['ISACTIVE']) :?> curr<?php endif;?>"><a href="<?php echo $bmenu['CHANNEL_URL'];?>"><?php echo $smenu['CHANNEL_NAME'];?></a>
+                    <?php if($smenu['CHANNEL_TIPS']) :?><?php echo htmlspecialchars_decode($smenu['CHANNEL_TIPS']);?><?php endif;?>
+                    </li>
+<?php endforeach;?>
+                </ul>
+<?php endif;?>
+            </div>
+        </div><!-- navinnr end -->
+    </div><!-- header end -->
+<?php endif;?>
+    <div class="container">
+<?php echo $this->content . PHP_EOL;?>
+    </div><!-- container end -->
+<?php if(!$onlybodyhtml) : ?>
+    <div class="footer">
+        <div class="info">
+<?php if(sizeof($infolinks)) : ?>
+            <p class="p1">
+<?php foreach ($infolinks as $information) :?>
+            <a href="<?php echo $information['URL'];?>"><?php echo $information['TITLE'];?></a>
+<?php endforeach;?>
+            </p>
+<?php endif;?>
+<?php if(sizeof($frindlinks)) : ?>
+            <p class="p2">友情链接：
+<?php foreach ($frindlinks as $index => $link) :?>
+        <?php if ($index != 0): ?><span>|</span><?php endif;?><a href="<?php echo $link['LINK_URL'];?>" target="_blank"><?php echo $link['LINK_NAME'];?></a>
+<?php endforeach;?>
+            </p>
+<?php endif;?>
+        </div>
+        <div class="copyright">
+            <p>Copyright © 2013 Huitong. All Rights Reserved</p>
+            <p>备案号：粤ICP备08038045号-2</p>
+        </div>
+    </div>
+<?php endif;?>
+</div><!-- wraper end -->
+<script type="text/javascript" id="jqscript" hosturl="http://hwtrip-dev.smartcom.cc/" src="<?php echo HWAL_Rewrite::js('jquery.js');?>"></script>
+<script type="text/javascript" src="<?php echo HWAL_Rewrite::js('global.js');?>"></script>
+<?php 
+    if(sizeof($this->js)){
+        foreach($this->js as $js)
+        {
+?>
+<script type="text/javascript" src="<?php echo HWAL_Rewrite::js($js['src']);?>"></script>
+<?php
+        }
+    }
+?>
+<?php 
+    if(isset($this->layout['innerJS'])){
+?>
+<script type="text/javascript">
+<?php echo $this->layout['innerJS'] . PHP_EOL;?>
+</script>
+<?php
+    }
+?>
+</body>
+</html>
